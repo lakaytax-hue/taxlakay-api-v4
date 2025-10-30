@@ -7,16 +7,19 @@ const app = express();
 app.use(cors({ origin: process.env.ALLOW_ORIGIN || "*" }));
 app.use(express.json());
 
-// Health check endpoint
+// Health check
 app.get("/", (req, res) => {
 res.send("✅ Tax Lakay Backend (Email-Only) is running successfully!");
 });
 
-// Main API route
+// Optional: API root message
+app.get("/api", (req, res) => res.send("API root OK"));
+
+// Main API routes
 app.use("/api", uploadRoutes);
 
-// Port setup for Render
+// Render port
 const PORT = process.env.PORT || 10000;
-app.listen(PORT, () => console.log(`✅ Server running on port ${PORT}`));
-
+app.listen(PORT, () => {
+console.log(`✅ Server running on port ${PORT}`);
 });
