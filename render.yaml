@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: tax-lakay-backend
+    env: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: /opt/render/project/src/.venv/bin/python app.py
+    envVars:
+      - key: EMAIL_USER
+        value: lakaytax@gmail.com
+      - key: EMAIL_PASS
+        sync: false
+      - key: OWNER_EMAIL
+        value: lakaytax@gmail.com
+      - key: ALLOW_ORIGIN
+        value: https://www.taxlakay.com
+      - key: SEND_CLIENT_RECEIPT
+        value: "true"
