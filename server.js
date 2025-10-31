@@ -27,7 +27,7 @@ return nodemailer.createTransporter({
 service: 'gmail',
 auth: {
 user: process.env.EMAIL_USER || 'lakaytax@gmail.com',
-pass: process.env.EMAIL_PASS // Your app password
+pass: process.env.EMAIL_PASS
 }
 });
 };
@@ -78,7 +78,7 @@ const transporter = createTransporter();
 // 1. Email to YOU (lakaytax@gmail.com) - Always send
 const adminEmail = {
 from: process.env.EMAIL_USER || 'lakaytax@gmail.com',
-to: 'lakaytax@gmail.com', // Your email
+to: 'lakaytax@gmail.com',
 subject: `📋 New Tax Document Upload - ${clientName || 'Customer'}`,
 html: `
 <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
@@ -120,7 +120,6 @@ let clientEmailSent = false;
 if (clientEmail) {
 const clientSubject = "We've Received Your Documents — Tax Lakay";
 
-// Your exact message template
 const clientEmailText = `
 Hi ${clientName || 'Valued Customer'},
 
