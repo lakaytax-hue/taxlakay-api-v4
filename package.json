@@ -1,5 +1,5 @@
 {
-"name": "tax-lakay-backend",
+"name": "tax-lakay-api-v4",
 "version": "1.0.0",
 "description": "Backend for Tax Lakay file uploads",
 "main": "server.js",
