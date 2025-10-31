@@ -45,6 +45,13 @@ app.get('/health', (req, res) => {
 res.json({ status: 'OK', service: 'Tax Lakay Backend' });
 });
 
+
+// ---- ✅ Friendly GET for browser checks ----
+app.get('/api/upload', (req, res) => {
+res.send('✅ TaxLakay API v4 is live — use POST /api/upload to send files.');
+});
+
+
 // Upload endpoint with email functionality
 app.post('/api/upload', upload.array('documents', 10), async (req, res) => {
 try {
