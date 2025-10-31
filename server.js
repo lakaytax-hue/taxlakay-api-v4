@@ -23,16 +23,22 @@ files: 10
 }
 });
 
-// -------- Email transporter helper (correct Nodemailer API) --------
+// ✅ Correct email transporter function
 function createTransporter() {
 const user = process.env.EMAIL_USER || 'lakaytax@gmail.com';
-const pass = process.env.EMAIL_PASS; // Gmail App Password required
+const pass = process.env.EMAIL_PASS;
+
 if (!user || !pass) {
 throw new Error('Missing EMAIL_USER or EMAIL_PASS env vars');
 }
+
+const nodemailer = require('nodemailer');
 return nodemailer.createTransport({
 service: 'gmail',
-auth: { user, pass },
+auth: {
+user,
+pass
+}
 });
 }
 
