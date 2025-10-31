@@ -21,7 +21,7 @@ files: 10
 }
 });
 
-// Email transporter setup
+// Email transporter setup - MAKE SURE THIS IS EXACT
 const createTransporter = () => {
 return nodemailer.createTransporter({
 service: 'gmail',
