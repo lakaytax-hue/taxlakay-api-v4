@@ -1,28 +1,31 @@
 const express = require('express');
-const multer = require('multer');
 const cors = require('cors');
+const multer = require('multer');
 const nodemailer = require('nodemailer');
 
 const app = express();
 
-// Middleware
+/* =========================
+1) BASIC MIDDLEWARE
+========================= */
 app.use(cors({
-origin: ['https://www.taxlakay.com', 'https://taxlakay.com', 'http://localhost:3000'],
+origin: ['https://www.taxlakay.com', 'https://taxlakay.com'],
 credentials: true
 }));
 app.use(express.json());
 
-// Multer configuration
+/* =========================
+2) MULTER (UPLOAD) SETUP
+========================= */
 const upload = multer({
 storage: multer.memoryStorage(),
-limits: {
-fileSize: 20 * 1024 * 1024, // 20MB
-files: 10
-}
+limits: { fileSize: 20 * 1024 * 1024, files: 10 } // 20MB each, up to 10 files
 });
 
-// Email transporter setup
-const createTransporter = () => {
+/* =========================
+3) EMAIL (NODEMAILER)
+========================= */
+function createTransporter() {
 return nodemailer.createTransport({
 service: 'gmail',
 auth: {
@@ -30,22 +33,31 @@ user: process.env.EMAIL_USER || 'lakaytax@gmail.com',
 pass: process.env.EMAIL_PASS
 }
 });
-};
+}
 
-// Test route
+/* =========================
+4) HEALTH ROUTES
+========================= */
 app.get('/', (req, res) => {
 res.json({
+ok: true,
 message: 'Tax Lakay Backend is running!',
 timestamp: new Date().toISOString()
 });
 });
 
-// Health check
 app.get('/health', (req, res) => {
-res.json({ status: 'OK', service: 'Tax Lakay Backend' });
+res.json({ ok: true, service: 'Tax Lakay Backend' });
 });
 
-// Upload endpoint with email functionality
+// Optional: friendly GET to see API is live
+app.get('/api/upload', (req, res) => {
+res.json({ ok: true, message: '✅ Use POST /api/upload to send files.' });
+});
+
+/* =========================
+5) UPLOAD + EMAIL + REDIRECT
+========================= */
 app.post('/api/upload', upload.array('documents', 10), async (req, res) => {
 try {
 console.log('📨 Upload request received');
@@ -53,178 +65,88 @@ console.log('Files:', req.files ? req.files.length : 0);
 console.log('Body:', req.body);
 
 if (!req.files || req.files.length === 0) {
-return res.status(400).json({
-ok: false,
-error: 'No files uploaded'
-});
+return res.status(400).json({ ok: false, error: 'No files uploaded' });
 }
 
+// Form fields (keep names in sync with your form)
 const {
-clientName,
-clientEmail,
-clientPhone,
-returnType,
-dependents,
-clientMessage,
-SEND_CLIENT_RECEIPT
+clientName = 'Client',
+clientEmail = '',
+clientPhone = '',
+clientMessage = ''
 } = req.body;
 
-const sendClientReceipt = SEND_CLIENT_RECEIPT !== 'false';
-const referenceNumber = `TL${Date.now().toString().slice(-6)}`;
+const ref = 'TL' + Math.floor(100000 + Math.random() * 900000);
 
-// Create email transporter
-const transporter = createTransporter();
-
-// 1. Email to YOU (lakaytax@gmail.com) - Always send
-const adminEmail = {
-from: process.env.EMAIL_USER || 'lakaytax@gmail.com',
-to: 'lakaytax@gmail.com',
-subject: `📋 New Tax Document Upload - ${clientName || 'Customer'}`,
-html: `
-<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-<h2 style="color: #1e63ff;">📋 New Document Upload Received</h2>
-
-<div style="background: #f8fafc; padding: 15px; border-radius: 8px; margin: 15px 0;">
-<h3 style="margin-top: 0;">Client Information:</h3>
-<p><strong>Name:</strong> ${clientName || 'Not provided'}</p>
-<p><strong>Email:</strong> ${clientEmail || 'Not provided'}</p>
-<p><strong>Phone:</strong> ${clientPhone || 'Not provided'}</p>
-<p><strong>Return Type:</strong> ${returnType || 'Not specified'}</p>
-<p><strong>Dependents:</strong> ${dependents || '0'}</p>
-<p><strong>Files Uploaded:</strong> ${req.files.length} files</p>
-<p><strong>Reference #:</strong> ${referenceNumber}</p>
-${clientMessage ? `<p><strong>Client Message:</strong> ${clientMessage}</p>` : ''}
-</div>
-
-<div style="background: #dcfce7; padding: 10px; border-radius: 5px;">
-<p><strong>Files received:</strong></p>
-<ul>
-${req.files.map(file => `<li>${file.originalname} (${(file.size / 1024 / 1024).toFixed(2)} MB)</li>`).join('')}
-</ul>
-</div>
-
-<p style="color: #64748b; font-size: 12px; margin-top: 20px;">
-Uploaded at: ${new Date().toLocaleString()}
-</p>
-</div>
-`,
-attachments: req.files.map(file => ({
-filename: file.originalname,
-content: file.buffer,
-contentType: file.mimetype
-}))
-};
-
-// 2. Email to CLIENT - ALWAYS SEND (with or without file attachments)
-let clientEmailSent = false;
-if (clientEmail) {
-const clientSubject = "We've Received Your Documents — Tax Lakay";
-
-const clientEmailText = `
-Hi ${clientName || 'Valued Customer'},
-
-Thank you so much for choosing Tax Lakay! 🎉
-We've received your documents and will start preparing your tax return within the next hour.
-If we need any additional information, we'll reach out right away.
-
-Your reference number is ${referenceNumber}.
-
-We appreciate your trust and look forward to helping you get the best refund possible!
-
-Warm regards,
-The Tax Lakay Team
-📧 lakaytax@gmail.com 📞 (317) 935-9067
-💻 www.taxlakay.com
-`.trim();
-
-const clientEmailHTML = `
-<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; line-height: 1.6;">
-<div style="text-align: center; margin-bottom: 20px;">
-<h2 style="color: #1e63ff; margin-bottom: 5px;">We've Received Your Documents</h2>
-<p style="color: #64748b; font-size: 16px;">Tax Lakay</p>
-</div>
-
-<div style="background: #f0f9ff; padding: 20px; border-radius: 10px; margin: 15px 0;">
-<p style="margin: 0 0 15px 0;"><strong>Hi ${clientName || 'Valued Customer'},</strong></p>
-
-<p style="margin: 0 0 15px 0;">Thank you so much for choosing Tax Lakay! 🎉</p>
-
-<p style="margin: 0 0 15px 0;">We've received your documents and will start preparing your tax return within the next hour.<br>
-If we need any additional information, we'll reach out right away.</p>
-
-<div style="background: #ffffff; padding: 15px; border-radius: 8px; border-left: 4px solid #1e63ff; margin: 15px 0;">
-<p style="margin: 0; font-weight: bold;">Your reference number is: <span style="color: #1e63ff;">${referenceNumber}</span></p>
-</div>
-
-<p style="margin: 15px 0;">We appreciate your trust and look forward to helping you get the best refund possible!</p>
-</div>
-
-<div style="text-align: center; margin-top: 25px; padding-top: 20px; border-top: 1px solid #e5e7eb;">
-<p style="margin: 5px 0; color: #475569;"><strong>Warm regards,</strong><br>The Tax Lakay Team</p>
-<p style="margin: 8px 0; color: #64748b;">
-📧 <a href="mailto:lakaytax@gmail.com" style="color: #1e63ff;">lakaytax@gmail.com</a> &nbsp;
-📞 <a href="tel:3179359067" style="color: #1e63ff;">(317) 935-9067</a><br>
-💻 <a href="https://www.taxlakay.com" style="color: #1e63ff;">www.taxlakay.com</a>
-</p>
-</div>
-</div>
-`;
-
-const clientEmailOptions = {
-from: process.env.EMAIL_USER || 'lakaytax@gmail.com',
-to: clientEmail,
-subject: clientSubject,
-text: clientEmailText,
-html: clientEmailHTML
-};
-
-// Add file attachments ONLY if customer selected the receipt option
-if (sendClientReceipt) {
-clientEmailOptions.attachments = req.files.map(file => ({
-filename: file.originalname,
-content: file.buffer,
-contentType: file.mimetype
+// Build attachments from memory
+const attachments = (req.files || []).map(f => ({
+filename: f.originalname,
+content: f.buffer,
+contentType: f.mimetype
 }));
 
-// Update subject to indicate files are attached
-clientEmailOptions.subject = "We've Received Your Documents — Tax Lakay (Files Attached)";
-}
+const transporter = createTransporter();
+const ownerEmail = process.env.OWNER_EMAIL || 'lakaytax@gmail.com';
+const fromEmail = process.env.EMAIL_USER || 'lakaytax@gmail.com';
 
-try {
-await transporter.sendMail(clientEmailOptions);
-clientEmailSent = true;
-console.log('✅ Client confirmation email sent to:', clientEmail);
-console.log('📎 Files attached:', sendClientReceipt);
-} catch (emailError) {
-console.error('❌ Failed to send client email:', emailError);
-}
-}
+/* ---- Email to YOU (owner) ---- */
+await transporter.sendMail({
+from: fromEmail,
+to: ownerEmail,
+subject: `📥 New Tax Document Upload — ${clientName} (Ref ${ref})`,
+text:
+`New upload received.
 
-// Send admin email (to you)
-await transporter.sendMail(adminEmail);
-console.log('✅ Admin notification email sent to lakaytax@gmail.com');
+Ref: ${ref}
+Name: ${clientName}
+Email: ${clientEmail}
+Phone: ${clientPhone}
 
-// Response to frontend
-res.json({
-ok: true,
-message: 'Files uploaded successfully! Confirmation email sent.',
-filesReceived: req.files.length,
-clientEmailSent: clientEmailSent,
-ref: referenceNumber
+Message:
+${clientMessage}
+
+Files: ${(req.files || []).length}`,
+attachments
 });
 
-} catch (error) {
-console.error('❌ Upload error:', error);
-res.status(500).json({
-ok: false,
-error: 'Upload failed: ' + error.message
+/* ---- Email to CLIENT (optional) ---- */
+if (clientEmail) {
+await transporter.sendMail({
+from: fromEmail,
+to: clientEmail,
+subject: `Tax Lakay — We received your documents (Ref ${ref})`,
+text:
+`Hello ${clientName},
+
+Thank you for submitting your documents to Tax Lakay.
+We’ve received your files and will review them shortly.
+
+Your reference number is: ${ref}
+
+We’ll contact you if anything else is needed.
+
+— Tax Lakay`
 });
+}
+
+/* ---- IMPORTANT: Redirect back to your site (Option B) ---- */
+// Prefer hidden form field "redirect", otherwise use Referer,
+// and finally fall back to a thank-you section.
+const redirectURL =
+req.body.redirect ||
+req.get('referer') ||
+'https://www.taxlakay.com/#thanks';
+
+return res.redirect(303, redirectURL); // POST-Redirect-GET pattern
+
+} catch (err) {
+console.error('Upload failed:', err);
+return res.status(500).json({ ok: false, error: 'Upload failed' });
 }
 });
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, '0.0.0.0', () => {
-console.log(`🚀 Tax Lakay Backend running on port ${PORT}`);
-console.log(`✅ Health check: http://localhost:${PORT}/health`);
-});
-
+/* =========================
+6) START SERVER
+========================= */
+const PORT = process.env.PORT || 10000;
+app.listen(PORT, () => console.log(`TaxLakay API v4 listening on ${PORT}`));
