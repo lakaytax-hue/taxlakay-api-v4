@@ -1,13 +1,14 @@
 {
-"name": "taxlakay-api-v4",
-"version": "1.0.0",
-"description": "TaxLakay email-only upload API (Render)",
+"name": "tax-lakay-backend",
+"version": "4.0.0",
+"description": "Tax Lakay upload/email API (v4)",
 "main": "server.js",
+"type": "commonjs",
 "scripts": {
 "start": "node server.js"
 },
 "engines": {
-"node": ">=18"
+"node": ">=18 <=22.16"
 },
 "dependencies": {
 "cors": "^2.8.5",
@@ -16,4 +17,3 @@
 "nodemailer": "^6.9.14"
 }
 }
-
