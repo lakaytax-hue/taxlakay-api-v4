@@ -204,34 +204,14 @@ console.error('❌ Failed to send client email:', emailError);
 await transporter.sendMail(adminEmail);
 console.log('✅ Admin notification email sent to lakaytax@gmail.com');
 
-// ✅ Return a tiny HTML page that immediately redirects back to your site
-const back =
-req.body.redirect || // optional hidden field from your form
-req.get('referer') || // or the page they submitted from
-'https://www.taxlakay.com/#thanks'; // final fallback
-
-return res
-.status(200)
-.set('Content-Type', 'text/html; charset=utf-8')
-.send(`<!doctype html>
-<html lang="en">
-<head>
-<meta http-equiv="refresh" content="0;url=${back}">
-<title>Redirecting...</title>
-<style>
-body { font-family: system-ui, Arial, sans-serif;
-text-align: center; padding: 40px; color: #1e63ff; }
-a { color: #1e63ff; font-weight: 600; text-decoration: none; }
-</style>
-</head>
-<body>
-<h2>✅ Files uploaded successfully!</h2>
-<p>We’re redirecting you back to <a href="${back}">Tax Lakay</a>…</p>
-<noscript>
-<p>If you are not redirected automatically, <a href="${back}">click here</a>.</p>
-</noscript>
-</body>
-</html>`);
+// Response to frontend
+res.json({
+ok: true,
+message: 'Files uploaded successfully! Confirmation email sent.',
+filesReceived: req.files.length,
+clientEmailSent: clientEmailSent,
+ref: referenceNumber
+});
 
 } catch (error) {
 console.error('❌ Upload error:', error);
@@ -246,5 +226,4 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, '0.0.0.0', () => {
 console.log(`🚀 Tax Lakay Backend running on port ${PORT}`);
 console.log(`✅ Health check: http://localhost:${PORT}/health`);
-});
-
+})
