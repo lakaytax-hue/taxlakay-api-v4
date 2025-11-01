@@ -75,7 +75,7 @@ const referenceNumber = `TL${Date.now().toString().slice(-6)}`;
 // Create email transporter
 const transporter = createTransporter();
 
-// 1) Email to YOU (owner)
+// 1. Email to YOU (lakaytax@gmail.com) - Always send
 const adminEmail = {
 from: process.env.EMAIL_USER || 'lakaytax@gmail.com',
 to: 'lakaytax@gmail.com',
@@ -83,6 +83,7 @@ subject: `📋 New Tax Document Upload - ${clientName || 'Customer'}`,
 html: `
 <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
 <h2 style="color: #1e63ff;">📋 New Document Upload Received</h2>
+
 <div style="background: #f8fafc; padding: 15px; border-radius: 8px; margin: 15px 0;">
 <h3 style="margin-top: 0;">Client Information:</h3>
 <p><strong>Name:</strong> ${clientName || 'Not provided'}</p>
@@ -94,12 +95,14 @@ html: `
 <p><strong>Reference #:</strong> ${referenceNumber}</p>
 ${clientMessage ? `<p><strong>Client Message:</strong> ${clientMessage}</p>` : ''}
 </div>
+
 <div style="background: #dcfce7; padding: 10px; border-radius: 5px;">
 <p><strong>Files received:</strong></p>
 <ul>
 ${req.files.map(file => `<li>${file.originalname} (${(file.size / 1024 / 1024).toFixed(2)} MB)</li>`).join('')}
 </ul>
 </div>
+
 <p style="color: #64748b; font-size: 12px; margin-top: 20px;">
 Uploaded at: ${new Date().toLocaleString()}
 </p>
@@ -112,20 +115,26 @@ contentType: file.mimetype
 }))
 };
 
-// 2) Email to CLIENT (optional, with/without attachments)
+// 2. Email to CLIENT - ALWAYS SEND (with or without file attachments)
 let clientEmailSent = false;
 if (clientEmail) {
-const clientSubject = sendClientReceipt
-? "We've Received Your Documents — Tax Lakay (Files Attached)"
-: "We've Received Your Documents — Tax Lakay";
+const clientSubject = "We've Received Your Documents — Tax Lakay";
 
 const clientEmailText = `
 Hi ${clientName || 'Valued Customer'},
 
-Thank you for choosing Tax Lakay! We’ve received your documents and will start your return shortly.
+Thank you so much for choosing Tax Lakay! 🎉
+We've received your documents and will start preparing your tax return within the next hour.
+If we need any additional information, we'll reach out right away.
+
 Your reference number is ${referenceNumber}.
 
-— Tax Lakay
+We appreciate your trust and look forward to helping you get the best refund possible!
+
+Warm regards,
+The Tax Lakay Team
+📧 lakaytax@gmail.com 📞 (317) 935-9067
+💻 www.taxlakay.com
 `.trim();
 
 const clientEmailHTML = `
@@ -134,21 +143,27 @@ const clientEmailHTML = `
 <h2 style="color: #1e63ff; margin-bottom: 5px;">We've Received Your Documents</h2>
 <p style="color: #64748b; font-size: 16px;">Tax Lakay</p>
 </div>
+
 <div style="background: #f0f9ff; padding: 20px; border-radius: 10px; margin: 15px 0;">
-<p><strong>Hi ${clientName || 'Valued Customer'},</strong></p>
-<p>Thank you so much for choosing Tax Lakay! 🎉</p>
-<p>We've received your documents and will start preparing your tax return within the next hour.<br>
+<p style="margin: 0 0 15px 0;"><strong>Hi ${clientName || 'Valued Customer'},</strong></p>
+
+<p style="margin: 0 0 15px 0;">Thank you so much for choosing Tax Lakay! 🎉</p>
+
+<p style="margin: 0 0 15px 0;">We've received your documents and will start preparing your tax return within the next hour.<br>
 If we need any additional information, we'll reach out right away.</p>
+
 <div style="background: #ffffff; padding: 15px; border-radius: 8px; border-left: 4px solid #1e63ff; margin: 15px 0;">
 <p style="margin: 0; font-weight: bold;">Your reference number is: <span style="color: #1e63ff;">${referenceNumber}</span></p>
 </div>
-<p>We appreciate your trust and look forward to helping you get the best refund possible!</p>
+
+<p style="margin: 15px 0;">We appreciate your trust and look forward to helping you get the best refund possible!</p>
 </div>
+
 <div style="text-align: center; margin-top: 25px; padding-top: 20px; border-top: 1px solid #e5e7eb;">
 <p style="margin: 5px 0; color: #475569;"><strong>Warm regards,</strong><br>The Tax Lakay Team</p>
 <p style="margin: 8px 0; color: #64748b;">
-📧 <a href="mailto:lakaytax@gmail.com" style="color: #1e63ff;">lakaytax@gmail.com</a>
-&nbsp;📞 <a href="tel:3179359067" style="color: #1e63ff;">(317) 935-9067</a><br>
+📧 <a href="mailto:lakaytax@gmail.com" style="color: #1e63ff;">lakaytax@gmail.com</a> &nbsp;
+📞 <a href="tel:3179359067" style="color: #1e63ff;">(317) 935-9067</a><br>
 💻 <a href="https://www.taxlakay.com" style="color: #1e63ff;">www.taxlakay.com</a>
 </p>
 </div>
@@ -163,12 +178,16 @@ text: clientEmailText,
 html: clientEmailHTML
 };
 
+// Add file attachments ONLY if customer selected the receipt option
 if (sendClientReceipt) {
 clientEmailOptions.attachments = req.files.map(file => ({
 filename: file.originalname,
 content: file.buffer,
 contentType: file.mimetype
 }));
+
+// Update subject to indicate files are attached
+clientEmailOptions.subject = "We've Received Your Documents — Tax Lakay (Files Attached)";
 }
 
 try {
@@ -185,17 +204,18 @@ console.error('❌ Failed to send client email:', emailError);
 await transporter.sendMail(adminEmail);
 console.log('✅ Admin notification email sent to lakaytax@gmail.com');
 
-// ===== THE FIX: redirect back to your site instead of returning JSON =====
-const redirectURL =
-req.body.redirect || // optional hidden field on your form
-req.get('referer') || // or the page the user submitted from
-'https://www.taxlakay.com/#thanks'; // final fallback
-
-return res.redirect(303, redirectURL);
+// Response to frontend
+res.json({
+ok: true,
+message: 'Files uploaded successfully! Confirmation email sent.',
+filesReceived: req.files.length,
+clientEmailSent: clientEmailSent,
+ref: referenceNumber
+});
 
 } catch (error) {
 console.error('❌ Upload error:', error);
-return res.status(500).json({
+res.status(500).json({
 ok: false,
 error: 'Upload failed: ' + error.message
 });
@@ -207,3 +227,4 @@ app.listen(PORT, '0.0.0.0', () => {
 console.log(`🚀 Tax Lakay Backend running on port ${PORT}`);
 console.log(`✅ Health check: http://localhost:${PORT}/health`);
 });
+
