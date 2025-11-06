@@ -229,7 +229,52 @@ error: 'Upload failed: ' + error.message
 });
 }
 });
+// ===== PDF route for Refund Estimator =====
+const PDFDocument = require('pdfkit');
 
+app.get('/api/estimator-pdf', (req, res) => {
+const {
+estimate = '—',
+withholding = '0',
+kids = '0',
+deps = '0',
+ts = new Date().toLocaleString(),
+dl = '0'
+} = req.query;
+
+res.setHeader('Content-Type', 'application/pdf');
+const disp = dl === '1' ? 'attachment' : 'inline';
+res.setHeader('Content-Disposition', `${disp}; filename="TaxLakay-Estimate.pdf"`);
+
+const doc = new PDFDocument({ size: 'LETTER', margin: 50 });
+doc.pipe(res);
+
+// Header
+doc.fillColor('#1e63ff').fontSize(20).text('Tax Lakay — Refund Estimate', { align: 'left' });
+doc.moveDown(0.5);
+doc.fillColor('#111827').fontSize(12).text(`Date & Time: ${ts}`);
+doc.moveDown();
+
+// Summary
+doc.fontSize(14).fillColor('#111827').text(`Estimated Refund: ${estimate}`, { continued: false });
+doc.moveDown(0.5);
+doc.fontSize(12)
+.text(`Federal withholding: ${withholding}`)
+.text(`Qualifying children under 17: ${kids}`)
+.text(`Other dependents: ${deps}`);
+doc.moveDown();
+
+// Footer / disclaimer
+doc.moveDown()
+.fontSize(10)
+.fillColor('#6b7280')
+.text('This is an estimate only based on simplified inputs. Your actual refund may differ after full review.')
+.moveDown()
+.fillColor('#111827')
+.text('Contact: lakaytax@gmail.com');
+
+doc.end();
+});
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, '0.0.0.0', () => {
 console.log(`🚀 Tax Lakay Backend running on port ${PORT}`);
