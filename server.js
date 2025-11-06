@@ -254,9 +254,16 @@ doc.rect(0, 0, doc.page.width, 60).fill('#1e63ff');
 doc.fillColor('white').fontSize(20).text('TAX LAKAY', 50, 20);
 doc.fillColor('white').fontSize(10).text('www.taxlakay.com', 420, 28, { align: 'right' });
 
-doc.image('https://www.taxlakay.com/logo.png', doc.page.width - 120, 15, { width: 60 });
+// Logo (right corner)
+doc.image('https://www.taxlakay.com/https://drive.google.com/uc?id=1HiezWKmpHyuYV3HS5bOkMPsEosCxebmB", doc.page.width - 120, 15, { width: 60 });
 
 doc.moveDown(3);
+
+// === TITLE ===
+doc.fillColor('#1e63ff').fontSize(18).text('Refund Estimate Summary', { align: 'left' });
+doc.moveDown(0.5);
+doc.fillColor('#111827').fontSize(12).text(`Date & Time: ${ts}`);
+doc.moveDown();
 
 // === TITLE ===
 doc.fillColor('#1e63ff').fontSize(18).text('Refund Estimate Summary', { align: 'left' });
