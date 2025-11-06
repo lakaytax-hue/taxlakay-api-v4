@@ -249,8 +249,17 @@ res.setHeader('Content-Disposition', `${disp}; filename="TaxLakay-Estimate.pdf"`
 const doc = new PDFDocument({ size: 'LETTER', margin: 50 });
 doc.pipe(res);
 
-// Header
-doc.fillColor('#1e63ff').fontSize(20).text('Tax Lakay — Refund Estimate', { align: 'left' });
+// === HEADER BAR ===
+doc.rect(0, 0, doc.page.width, 60).fill('#1e63ff');
+doc.fillColor('white').fontSize(20).text('TAX LAKAY', 50, 20);
+doc.fillColor('white').fontSize(10).text('www.taxlakay.com', 420, 28, { align: 'right' });
+
+doc.image('https://www.taxlakay.com/logo.png', doc.page.width - 120, 15, { width: 60 });
+
+doc.moveDown(3);
+
+// === TITLE ===
+doc.fillColor('#1e63ff').fontSize(18).text('Refund Estimate Summary', { align: 'left' });
 doc.moveDown(0.5);
 doc.fillColor('#111827').fontSize(12).text(`Date & Time: ${ts}`);
 doc.moveDown();
