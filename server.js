@@ -255,7 +255,7 @@ doc.fillColor('white').fontSize(20).text('TAX LAKAY', 50, 20);
 doc.fillColor('white').fontSize(10).text('www.taxlakay.com', 420, 28, { align: 'right' });
 
 // Logo (right corner)
-doc.image('https://www.taxlakay.com/https://drive.google.com/uc?id=1HiezWKmpHyuYV3HS5bOkMPsEosCxebmB", doc.page.width - 120, 15, { width: 60 });
+doc.image('https://drive.google.com/uc?id=1HiezWKmpHyuYV3HS5bOkMPsEosCxebmB', doc.page.width - 120, 15, { width: 60 });
 
 doc.moveDown(3);
 
