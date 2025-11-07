@@ -14,6 +14,9 @@ credentials: true
 }));
 app.use(express.json());
 
+// Serve static files from the "public" folder (for logo, etc.)
+app.use(express.static(path.join(__dirname, 'public')));
+
 // Multer configuration
 const upload = multer({
 storage: multer.memoryStorage(),
