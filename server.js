@@ -17,6 +17,39 @@ app.use(express.json());
 // Serve static files from the "public" folder (for logo, etc.)
 app.use(express.static(path.join(__dirname, 'public')));
 
+// === CSV logging setup ===
+const PUBLIC_DIR = path.join(__dirname, 'public');
+if (!fs.existsSync(PUBLIC_DIR)) fs.mkdirSync(PUBLIC_DIR, { recursive: true });
+
+// serve /public so you can download the log and logo.png
+app.use(express.static(PUBLIC_DIR));
+
+const LOG_FILE = path.join(PUBLIC_DIR, 'uploads_log.csv');
+
+function csvEscape(v) {
+if (v === undefined || v === null) return '""';
+const s = String(v).replace(/"/g, '""');
+return `"${s}"`;
+}
+
+function ensureLogHeader() {
+if (!fs.existsSync(LOG_FILE)) {
+const header = [
+'timestamp',
+'ref',
+'clientName',
+'clientEmail',
+'clientPhone',
+'returnType',
+'dependents',
+'filesCount',
+'fileNames'
+].join(',') + '\n';
+fs.writeFileSync(LOG_FILE, header);
+}
+}
+ensureLogHeader();
+
 // Multer configuration
 const upload = multer({
 storage: multer.memoryStorage(),
@@ -216,6 +249,29 @@ console.error('❌ Failed to send client email:', emailError);
 // Send admin email
 await transporter.sendMail(adminEmail);
 console.log('✅ Admin notification email sent to lakaytax@gmail.com');
+
+// --- CSV log append (safe even if something goes wrong with email) ---
+try {
+const ref = referenceId || req.body.reference || `TL${Math.floor(100000 + Math.random()*900000)}`;
+const files = (req.files || []).map(f => f.originalname);
+const row = [
+new Date().toISOString(),
+ref,
+req.body.clientName,
+req.body.clientEmail,
+req.body.clientPhone || '',
+req.body.returnType || '',
+req.body.dependents || '0',
+files.length,
+files.join('; ')
+].map(csvEscape).join(',') + '\n';
+
+fs.appendFile(LOG_FILE, row, (err) => {
+if (err) console.error('CSV append error:', err);
+});
+} catch (e) {
+console.error('CSV logging failed:', e);
+}
 
 // Response to frontend
 res.json({
