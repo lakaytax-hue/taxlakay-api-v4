@@ -43,11 +43,12 @@ auth: { user: process.env.EMAIL_USER || 'lakaytax@gmail.com', pass: process.env.
 });
 
 /* -------------------- Shared Header / Footer (Pro) -------------------- */
-// Draws the blue header bar with site + logo
+// Blue header bar with site + logo
 function drawPdfHeaderPro(doc) {
 const logoPath = path.join(__dirname, 'public', 'logo.png');
-// blue bar
+
 doc.save();
+// blue bar across the very top
 doc.rect(0, 0, doc.page.width, 60).fill('#1e63ff');
 // text
 doc.fillColor('white').fontSize(20).text('TAX LAKAY', 50, 20);
@@ -57,15 +58,13 @@ if (fs.existsSync(logoPath)) {
 doc.image(logoPath, doc.page.width - 120, 12, { width: 60 });
 }
 doc.restore();
-// Ensure content starts below header
-if (doc.y < 80) doc.y = 80;
 }
 
 // Thin rule + tiny centered logo + contact + copyright
 function drawPdfFooterPro(doc) {
 const logoPath = path.join(__dirname, 'public', 'logo.png');
 const marginX = 48;
-const footerTop = doc.page.height - 80; // closer to bottom
+const footerTop = doc.page.height - 80; // bottom margin area
 
 doc.save();
 doc.strokeColor('#e5e7eb').moveTo(marginX, footerTop).lineTo(doc.page.width - marginX, footerTop).stroke();
@@ -92,12 +91,10 @@ doc.fillColor('#9ca3af').fontSize(9)
 doc.restore();
 }
 
-// Helper to enable repeating header+footer on every page
+// Draw header+footer once on each page (fixes extra blank pages)
 function applyPageChrome(doc) {
-// draw for first page
 drawPdfHeaderPro(doc);
 drawPdfFooterPro(doc);
-// and for every new page after that
 doc.on('pageAdded', () => {
 drawPdfHeaderPro(doc);
 drawPdfFooterPro(doc);
@@ -175,10 +172,13 @@ res.setHeader('Content-Type', 'application/pdf');
 const disp = dl==='1' ? 'attachment' : 'inline';
 res.setHeader('Content-Disposition', `${disp}; filename="TaxLakay-Estimate.pdf"`);
 
-const doc = new PDFDocument({ size: 'LETTER', margin: 50 }); // 50 margin works with our header/footer
+// Reserve space for header (top) and footer (bottom) → prevents phantom pages
+const doc = new PDFDocument({
+size: 'LETTER',
+margins: { top: 90, bottom: 88, left: 50, right: 50 }
+});
 doc.pipe(res);
 
-// repeat chrome on all pages
 applyPageChrome(doc);
 
 // Content
@@ -207,10 +207,13 @@ const { ref='TL-'+Date.now(), files='1', service='Tax Preparation — $150 Flat'
 res.setHeader('Content-Type', 'application/pdf');
 res.setHeader('Content-Disposition', `attachment; filename="TaxLakay_Receipt_${String(ref).replace(/[^A-Za-z0-9_-]/g,'')}.pdf"`);
 
-const doc = new PDFDocument({ size: 'LETTER', margin: 48 });
+// Reserve space for header & footer (no blanks)
+const doc = new PDFDocument({
+size: 'LETTER',
+margins: { top: 90, bottom: 88, left: 48, right: 48 }
+});
 doc.pipe(res);
 
-// repeat chrome on all pages
 applyPageChrome(doc);
 
 // Body
@@ -229,30 +232,34 @@ doc.moveDown(0.8);
 
 // success chip
 const startY = doc.y;
-doc.roundedRect(48, startY, 90, 24, 12).fill('#10b981');
-doc.fillColor('#ffffff').fontSize(12).text('SUCCESS', 63, startY + 6);
+doc.roundedRect(doc.page.margins.left, startY, 90, 24, 12).fill('#10b981');
+doc.fillColor('#ffffff').fontSize(12).text('SUCCESS', doc.page.margins.left + 15, startY + 6);
 doc.fillColor('#111827');
 doc.y = startY + 36;
 
 // note
 const note = `Files uploaded successfully! Confirmation email: ${emailOK}.`;
-doc.rect(48, doc.y, doc.page.width - 96, 40).fill('#f0f9ff');
+const noteX = doc.page.margins.left;
+const noteW = doc.page.width - doc.page.margins.left - doc.page.margins.right;
+doc.rect(noteX, doc.y, noteW, 40).fill('#f0f9ff');
 doc.fillColor('#1e63ff').fontSize(12)
-.text(note, 56, doc.y + 8, { width: doc.page.width - 112 });
+.text(note, noteX + 8, doc.y + 8, { width: noteW - 16 });
 doc.fillColor('#111827');
 doc.moveDown(3);
 
 // details table
 let y = doc.y;
+const lineX1 = doc.page.margins.left;
+const lineX2 = doc.page.width - doc.page.margins.right;
 rows.forEach(([k, v]) => {
-doc.moveTo(48, y).lineTo(doc.page.width - 48, y).strokeColor('#f1f5f9').stroke();
+doc.moveTo(lineX1, y).lineTo(lineX2, y).strokeColor('#f1f5f9').stroke();
 y += 10;
-doc.fillColor('#64748b').fontSize(12).text(k, 48, y);
-doc.fillColor('#111827').font('Helvetica-Bold').text(v, 300, y, { align: 'right' });
+doc.fillColor('#64748b').fontSize(12).text(k, lineX1, y);
+doc.fillColor('#111827').font('Helvetica-Bold').text(v, lineX1 + 252, y, { align: 'right', width: lineX2 - (lineX1 + 252) });
 doc.font('Helvetica');
 y += 22;
 });
-doc.moveTo(48, y).lineTo(doc.page.width - 48, y).strokeColor('#f1f5f9').stroke();
+doc.moveTo(lineX1, y).lineTo(lineX2, y).strokeColor('#f1f5f9').stroke();
 
 doc.end();
 });
