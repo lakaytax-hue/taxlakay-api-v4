@@ -25,7 +25,8 @@ app.use(express.static(PUBLIC_DIR));
 const LOG_FILE = path.join(PUBLIC_DIR, 'uploads_log.csv');
 function csvEscape(v){ if(v===undefined||v===null) return '""'; const s=String(v).replace(/"/g,'""'); return `"${s}"`; }
 if (!fs.existsSync(LOG_FILE)) {
-fs.writeFileSync(LOG_FILE,
+fs.writeFileSync(
+LOG_FILE,
 'timestamp,ref,clientName,clientEmail,clientPhone,returnType,dependents,filesCount,fileNames\n'
 );
 }
@@ -60,17 +61,28 @@ doc.image(logoPath, doc.page.width - 120, 12, { width: 60 });
 doc.restore();
 }
 
-// Thin rule + tiny centered logo + contact + copyright
+// Footer inside printable area; prevents page breaks
 function drawPdfFooterPro(doc) {
 const logoPath = path.join(__dirname, 'public', 'logo.png');
-const marginX = 48;
-const footerTop = doc.page.height - 80; // bottom margin area
+
+// inside-content metrics
+const contentX = doc.page.margins.left;
+const contentW = doc.page.width - doc.page.margins.left - doc.page.margins.right;
+
+// divider line ~40pt above bottom margin boundary (inside page)
+const dividerY = doc.page.height - doc.page.margins.bottom - 40;
 
 doc.save();
-doc.strokeColor('#e5e7eb').moveTo(marginX, footerTop).lineTo(doc.page.width - marginX, footerTop).stroke();
 
-let y = footerTop + 8;
+// thin divider
+doc.strokeColor('#e5e7eb')
+.moveTo(contentX, dividerY)
+.lineTo(contentX + contentW, dividerY)
+.stroke();
 
+let y = dividerY + 8;
+
+// tiny centered logo
 if (fs.existsSync(logoPath)) {
 const imgW = 22;
 const x = (doc.page.width - imgW) / 2;
@@ -78,20 +90,26 @@ doc.image(logoPath, x, y, { width: imgW });
 y += 25;
 }
 
-doc.fillColor('#111827').fontSize(11).text('Tax Lakay', marginX, y, { align: 'center' });
+// "Tax Lakay"
+doc.fillColor('#111827').fontSize(11)
+.text('Tax Lakay', contentX, y, { width: contentW, align: 'center', lineBreak: false });
 y += 14;
 
+// contact (ASCII only to avoid glyph artifacts)
 doc.fillColor('#64748b').fontSize(10)
-.text('(317) 935-9067 | www.taxlakay.com | lakaytax@gmail.com', marginX, y, { align: 'center' });
+.text('(317) 935-9067 | www.taxlakay.com | lakaytax@gmail.com',
+contentX, y, { width: contentW, align: 'center', lineBreak: false });
 y += 14;
 
+// copyright
 doc.fillColor('#9ca3af').fontSize(9)
-.text(`© ${new Date().getFullYear()} Tax Lakay. All rights reserved.`, marginX, y, { align: 'center' });
+.text(`© ${new Date().getFullYear()} Tax Lakay. All rights reserved.`,
+contentX, y, { width: contentW, align: 'center', lineBreak: false });
 
 doc.restore();
 }
 
-// Draw header+footer once on each page (fixes extra blank pages)
+// Draw header+footer once on each page
 function applyPageChrome(doc) {
 drawPdfHeaderPro(doc);
 drawPdfFooterPro(doc);
@@ -137,7 +155,7 @@ attachments: req.files.map(f => ({ filename: f.originalname, content: f.buffer }
 };
 await transporter.sendMail(adminEmail);
 
-// Client email (simple receipt)
+// Client confirmation (simple)
 if (clientEmail) {
 await transporter.sendMail({
 from: process.env.EMAIL_USER || 'lakaytax@gmail.com',
@@ -172,7 +190,7 @@ res.setHeader('Content-Type', 'application/pdf');
 const disp = dl==='1' ? 'attachment' : 'inline';
 res.setHeader('Content-Disposition', `${disp}; filename="TaxLakay-Estimate.pdf"`);
 
-// Reserve space for header (top) and footer (bottom) → prevents phantom pages
+// Reserve space for header & footer (prevents phantom pages)
 const doc = new PDFDocument({
 size: 'LETTER',
 margins: { top: 90, bottom: 88, left: 50, right: 50 }
@@ -202,12 +220,20 @@ doc.end();
 
 /* -------------------- Upload Receipt PDF -------------------- */
 app.get('/api/receipt-pdf', (req, res) => {
-const { ref='TL-'+Date.now(), files='1', service='Tax Preparation — $150 Flat', emailOK='Sent', dateTime=new Date().toLocaleString() } = req.query;
+const {
+ref='TL-'+Date.now(),
+files='1',
+service='Tax Preparation — $150 Flat',
+emailOK='Sent',
+dateTime=new Date().toLocaleString()
+} = req.query;
 
 res.setHeader('Content-Type', 'application/pdf');
-res.setHeader('Content-Disposition', `attachment; filename="TaxLakay_Receipt_${String(ref).replace(/[^A-Za-z0-9_-]/g,'')}.pdf"`);
+res.setHeader('Content-Disposition',
+`attachment; filename="TaxLakay_Receipt_${String(ref).replace(/[^A-Za-z0-9_-]/g,'')}.pdf"`
+);
 
-// Reserve space for header & footer (no blanks)
+// Reserve space for header & footer (prevents phantom pages)
 const doc = new PDFDocument({
 size: 'LETTER',
 margins: { top: 90, bottom: 88, left: 48, right: 48 }
@@ -242,8 +268,7 @@ const note = `Files uploaded successfully! Confirmation email: ${emailOK}.`;
 const noteX = doc.page.margins.left;
 const noteW = doc.page.width - doc.page.margins.left - doc.page.margins.right;
 doc.rect(noteX, doc.y, noteW, 40).fill('#f0f9ff');
-doc.fillColor('#1e63ff').fontSize(12)
-.text(note, noteX + 8, doc.y + 8, { width: noteW - 16 });
+doc.fillColor('#1e63ff').fontSize(12).text(note, noteX + 8, doc.y + 8, { width: noteW - 16 });
 doc.fillColor('#111827');
 doc.moveDown(3);
 
@@ -255,7 +280,8 @@ rows.forEach(([k, v]) => {
 doc.moveTo(lineX1, y).lineTo(lineX2, y).strokeColor('#f1f5f9').stroke();
 y += 10;
 doc.fillColor('#64748b').fontSize(12).text(k, lineX1, y);
-doc.fillColor('#111827').font('Helvetica-Bold').text(v, lineX1 + 252, y, { align: 'right', width: lineX2 - (lineX1 + 252) });
+doc.fillColor('#111827').font('Helvetica-Bold')
+.text(v, lineX1 + 252, y, { align: 'right', width: lineX2 - (lineX1 + 252) });
 doc.font('Helvetica');
 y += 22;
 });
