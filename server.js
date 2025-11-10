@@ -4,7 +4,7 @@ const express = require('express');
 const multer = require('multer');
 const cors = require('cors');
 const nodemailer = require('nodemailer');
-const PDFDocument = require('pdfkit'); // <-- added here (single require)
+const PDFDocument = require('pdfkit');
 
 const app = express();
 
@@ -70,6 +70,44 @@ pass: process.env.EMAIL_PASS
 }
 });
 };
+
+/* ------------------------ Shared PDF Footer (Pro) --------------------- */
+// Thin divider, tiny logo, centered contact + copyright
+function drawPdfFooterPro(doc) {
+const logoPath = path.join(__dirname, 'public', 'logo.png');
+const marginX = 48;
+const footerTop = doc.page.height - 110; // space for 3 text lines + logo
+
+doc.save();
+doc.strokeColor('#e5e7eb')
+.moveTo(marginX, footerTop)
+.lineTo(doc.page.width - marginX, footerTop)
+.stroke();
+
+let y = footerTop + 8;
+
+// Centered tiny logo (optional)
+if (fs.existsSync(logoPath)) {
+const imgW = 18;
+const x = (doc.page.width - imgW) / 2;
+doc.image(logoPath, x, y, { width: imgW });
+y += 22;
+}
+
+doc.fillColor('#111827').fontSize(11)
+.text('Tax Lakay', marginX, y, { align: 'center' });
+y += 14;
+
+doc.fillColor('#64748b').fontSize(10)
+.text('📞 (317) 935-9067 | 🌐 www.taxlakay.com | 📧 lakaytax@gmail.com',
+marginX, y, { align: 'center' });
+y += 14;
+
+doc.fillColor('#9ca3af').fontSize(9)
+.text(`© ${new Date().getFullYear()} Tax Lakay. All rights reserved.`,
+marginX, y, { align: 'center' });
+doc.restore();
+}
 
 /* -------------------------------- Health ------------------------------ */
 app.get('/', (req, res) => {
@@ -298,14 +336,14 @@ doc.rect(0, 0, doc.page.width, 60).fill('#1e63ff');
 doc.fillColor('white').fontSize(20).text('TAX LAKAY', 50, 20);
 doc.fillColor('white').fontSize(10).text('www.taxlakay.com', 420, 28, { align: 'right' });
 
-// Logo from local /public/logo.png (fix for previous broken path)
+// Logo from local /public/logo.png
 const logoPath = path.join(__dirname, 'public', 'logo.png');
 if (fs.existsSync(logoPath)) {
 doc.image(logoPath, doc.page.width - 120, 15, { width: 60 });
 }
 doc.moveDown(3);
 
-// Title
+// Title + timestamp
 doc.fillColor('#1e63ff').fontSize(18).text('Refund Estimate Summary', { align: 'left' });
 doc.moveDown(0.5);
 doc.fillColor('#111827').fontSize(12).text(`Date & Time: ${ts}`);
@@ -320,20 +358,18 @@ doc.fontSize(12)
 .text(`Other dependents: ${deps}`);
 doc.moveDown();
 
-// Footer / disclaimer
+// Disclaimer
 doc.moveDown()
 .fontSize(10)
 .fillColor('#6b7280')
-.text('This is an estimate only based on simplified inputs. Your actual refund may differ after full review.')
-.moveDown()
-.fillColor('#111827')
-.text('Contact: lakaytax@gmail.com');
+.text('This is an estimate only based on simplified inputs. Your actual refund may differ after full review.');
 
+// Professional footer (matches on-page print footer)
+drawPdfFooterPro(doc);
 doc.end();
 });
 
-/* -------------------- NEW: Receipt PDF (Server-side) -------------------- */
-// Opens a real PDF for iPhone/Google Sites (works with <form target="_blank">)
+/* -------------------- Receipt PDF (Server-side, Pro) -------------------- */
 app.get('/api/receipt-pdf', (req, res) => {
 try {
 const {
@@ -396,13 +432,8 @@ y += 22;
 });
 doc.moveTo(48, y).lineTo(doc.page.width - 48, y).strokeColor('#f1f5f9').stroke();
 
-// Footer
-doc.moveDown(2);
-doc.fillColor('#475569').fontSize(10)
-.text('📞 (317) 935-9067 | 🌐 www.taxlakay.com | 📧 lakaytax@gmail.com', { align: 'center' });
-doc.fillColor('#94a3b8')
-.text(`© ${new Date().getFullYear()} Tax Lakay. All rights reserved.`, { align: 'center' });
-
+// Professional footer (matches on-page print footer)
+drawPdfFooterPro(doc);
 doc.end();
 } catch (e) {
 console.error('PDF error:', e);
