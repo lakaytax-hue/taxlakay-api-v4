@@ -4,26 +4,26 @@ const express = require('express');
 const multer = require('multer');
 const cors = require('cors');
 const nodemailer = require('nodemailer');
+const PDFDocument = require('pdfkit'); // <-- added here (single require)
 
 const app = express();
 
-// Middleware
+/* ----------------------------- Middleware ----------------------------- */
 app.use(cors({
 origin: ['https://www.taxlakay.com', 'https://taxlakay.com', 'http://localhost:3000'],
 credentials: true
 }));
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
-// Serve static files from the "public" folder (for logo, etc.)
-app.use(express.static(path.join(__dirname, 'public')));
-
-// === CSV logging setup ===
+/* --------------------------- Public / Static -------------------------- */
 const PUBLIC_DIR = path.join(__dirname, 'public');
 if (!fs.existsSync(PUBLIC_DIR)) fs.mkdirSync(PUBLIC_DIR, { recursive: true });
 
-// serve /public so you can download the log and logo.png
+// Serve static files from "public" (logo.png, logs, etc.)
 app.use(express.static(PUBLIC_DIR));
 
+/* ------------------------------ CSV Log ------------------------------- */
 const LOG_FILE = path.join(PUBLIC_DIR, 'uploads_log.csv');
 
 function csvEscape(v) {
@@ -50,7 +50,7 @@ fs.writeFileSync(LOG_FILE, header);
 }
 ensureLogHeader();
 
-// Multer configuration
+/* ----------------------------- Multer conf ---------------------------- */
 const upload = multer({
 storage: multer.memoryStorage(),
 limits: {
@@ -59,8 +59,9 @@ files: 10
 }
 });
 
-// Email transporter setup
+/* ------------------------- Email transporter -------------------------- */
 const createTransporter = () => {
+// Using Gmail (App Password recommended)
 return nodemailer.createTransport({
 service: 'gmail',
 auth: {
@@ -70,31 +71,24 @@ pass: process.env.EMAIL_PASS
 });
 };
 
-// Test route
+/* -------------------------------- Health ------------------------------ */
 app.get('/', (req, res) => {
-res.json({
-message: 'Tax Lakay Backend is running!',
-timestamp: new Date().toISOString()
+res.json({ message: 'Tax Lakay Backend is running!', timestamp: new Date().toISOString() });
 });
-});
-
-// Health check
 app.get('/health', (req, res) => {
 res.json({ status: 'OK', service: 'Tax Lakay Backend' });
 });
 
-// Upload endpoint with email functionality
-app.post('/api/upload', upload.array('documents', 10), async (req, res) => {
+/* ------------------------------ Upload API ---------------------------- */
+// Accept any file field name (handles "documents" or "files")
+app.post('/api/upload', upload.any(), async (req, res) => {
 try {
 console.log('📨 Upload request received');
 console.log('Files:', req.files ? req.files.length : 0);
 console.log('Body:', req.body);
 
 if (!req.files || req.files.length === 0) {
-return res.status(400).json({
-ok: false,
-error: 'No files uploaded'
-});
+return res.status(400).json({ ok: false, error: 'No files uploaded' });
 }
 
 const {
@@ -110,10 +104,9 @@ SEND_CLIENT_RECEIPT
 const sendClientReceipt = SEND_CLIENT_RECEIPT !== 'false';
 const referenceNumber = `TL${Date.now().toString().slice(-6)}`;
 
-// Create email transporter
 const transporter = createTransporter();
 
-// 1. Email to YOU (lakaytax@gmail.com)
+// 1) Email to YOU (admin)
 const adminEmail = {
 from: process.env.EMAIL_USER || 'lakaytax@gmail.com',
 to: 'lakaytax@gmail.com',
@@ -126,12 +119,8 @@ html: `
 <div style="background: #f8fafc; padding: 15px; border-radius: 8px; margin: 15px 0;">
 <h3 style="margin-top: 0;">Client Information:</h3>
 <p><strong>Name:</strong> ${clientName || 'Not provided'}</p>
-<p><strong>Email:</strong> ${
-clientEmail ? `<a href="mailto:${clientEmail}">${clientEmail}</a>` : 'Not provided'
-}</p>
-<p><strong>Phone:</strong> ${
-clientPhone ? `<a href="tel:${clientPhone.replace(/[^0-9+]/g, '')}">${clientPhone}</a>` : 'Not provided'
-}</p>
+<p><strong>Email:</strong> ${clientEmail ? `<a href="mailto:${clientEmail}">${clientEmail}</a>` : 'Not provided'}</p>
+<p><strong>Phone:</strong> ${clientPhone ? `<a href="tel:${clientPhone.replace(/[^0-9+]/g, '')}">${clientPhone}</a>` : 'Not provided'}</p>
 <p><strong>Return Type:</strong> ${returnType || 'Not specified'}</p>
 <p><strong>Dependents:</strong> ${dependents || '0'}</p>
 <p><strong>Files Uploaded:</strong> ${req.files.length} files</p>
@@ -165,7 +154,7 @@ contentType: file.mimetype
 }))
 };
 
-// 2. Email to CLIENT
+// 2) Email to CLIENT
 let clientEmailSent = false;
 if (clientEmail) {
 const clientSubject = "We've Received Your Documents — Tax Lakay";
@@ -200,11 +189,9 @@ const clientEmailHTML = `
 <p>Thank you so much for choosing Tax Lakay! 🎉</p>
 <p>We've received your documents and will start preparing your tax return within the next hour.<br>
 If we need any additional information, we'll reach out right away.</p>
-
 <div style="background: #ffffff; padding: 15px; border-radius: 8px; border-left: 4px solid #1e63ff; margin: 15px 0;">
 <p style="margin: 0; font-weight: bold;">Your reference number is: <span style="color: #1e63ff;">${referenceNumber}</span></p>
 </div>
-
 <p>We appreciate your trust and look forward to helping you get the best refund possible!</p>
 </div>
 
@@ -250,9 +237,9 @@ console.error('❌ Failed to send client email:', emailError);
 await transporter.sendMail(adminEmail);
 console.log('✅ Admin notification email sent to lakaytax@gmail.com');
 
-// --- CSV log append (safe even if something goes wrong with email) ---
+// --- CSV log append ---
 try {
-const ref = referenceId || req.body.reference || `TL${Math.floor(100000 + Math.random()*900000)}`;
+const ref = referenceNumber; // fixed (was referenceId)
 const files = (req.files || []).map(f => f.originalname);
 const row = [
 new Date().toISOString(),
@@ -284,15 +271,11 @@ ref: referenceNumber
 
 } catch (error) {
 console.error('❌ Upload error:', error);
-res.status(500).json({
-ok: false,
-error: 'Upload failed: ' + error.message
-});
+res.status(500).json({ ok: false, error: 'Upload failed: ' + error.message });
 }
 });
-// ===== PDF route for Refund Estimator =====
-const PDFDocument = require('pdfkit');
 
+/* --------------------- PDF route for Refund Estimator ------------------- */
 app.get('/api/estimator-pdf', (req, res) => {
 const {
 estimate = '—',
@@ -310,32 +293,26 @@ res.setHeader('Content-Disposition', `${disp}; filename="TaxLakay-Estimate.pdf"`
 const doc = new PDFDocument({ size: 'LETTER', margin: 50 });
 doc.pipe(res);
 
-// === HEADER BAR ===
+// Header bar
 doc.rect(0, 0, doc.page.width, 60).fill('#1e63ff');
 doc.fillColor('white').fontSize(20).text('TAX LAKAY', 50, 20);
 doc.fillColor('white').fontSize(10).text('www.taxlakay.com', 420, 28, { align: 'right' });
 
-// Logo (local file from repo)
-const logoPath = path.join(__dirname, 'public', 'https://drive.google.com/uc?id=1HiezWKmpHyuYV3HS5bOkMPsEosCxebmB');
+// Logo from local /public/logo.png (fix for previous broken path)
+const logoPath = path.join(__dirname, 'public', 'logo.png');
 if (fs.existsSync(logoPath)) {
 doc.image(logoPath, doc.page.width - 120, 15, { width: 60 });
 }
 doc.moveDown(3);
 
-// === TITLE ===
-doc.fillColor('#1e63ff').fontSize(18).text('Refund Estimate Summary', { align: 'left' });
-doc.moveDown(0.5);
-doc.fillColor('#111827').fontSize(12).text(`Date & Time: ${ts}`);
-doc.moveDown();
-
-// === TITLE ===
+// Title
 doc.fillColor('#1e63ff').fontSize(18).text('Refund Estimate Summary', { align: 'left' });
 doc.moveDown(0.5);
 doc.fillColor('#111827').fontSize(12).text(`Date & Time: ${ts}`);
 doc.moveDown();
 
 // Summary
-doc.fontSize(14).fillColor('#111827').text(`Estimated Refund: ${estimate}`, { continued: false });
+doc.fontSize(14).fillColor('#111827').text(`Estimated Refund: ${estimate}`);
 doc.moveDown(0.5);
 doc.fontSize(12)
 .text(`Federal withholding: ${withholding}`)
@@ -354,6 +331,86 @@ doc.moveDown()
 
 doc.end();
 });
+
+/* -------------------- NEW: Receipt PDF (Server-side) -------------------- */
+// Opens a real PDF for iPhone/Google Sites (works with <form target="_blank">)
+app.get('/api/receipt-pdf', (req, res) => {
+try {
+const {
+ref = 'TL-' + Date.now(),
+files = '1',
+service = 'Tax Preparation — $150 Flat',
+emailOK = 'Sent',
+dateTime = new Date().toLocaleString('en-US', {
+year: 'numeric', month: 'long', day: 'numeric',
+hour: '2-digit', minute: '2-digit'
+})
+} = req.query;
+
+res.setHeader('Content-Type', 'application/pdf');
+res.setHeader(
+'Content-Disposition',
+`attachment; filename="TaxLakay_Receipt_${String(ref).replace(/[^A-Za-z0-9_-]/g,'')}.pdf"`
+);
+
+const doc = new PDFDocument({ size: 'LETTER', margin: 48 });
+doc.pipe(res);
+
+// Header with logo + title
+const logoPath = path.join(__dirname, 'public', 'logo.png');
+if (fs.existsSync(logoPath)) {
+doc.image(logoPath, 48, 36, { width: 80 });
+}
+doc.fontSize(20).fillColor('#1e63ff').text('Tax Lakay — Upload Receipt', 140, 42);
+doc.moveDown(1.2);
+
+// Success badge
+doc.roundedRect(48, 90, 90, 24, 12).fill('#10b981');
+doc.fillColor('#ffffff').fontSize(12).text('SUCCESS', 63, 96);
+doc.fillColor('#111827');
+
+// Note box
+doc.moveDown(2);
+const note = `Files uploaded successfully! Confirmation email: ${emailOK}.`;
+doc.rect(48, 130, doc.page.width - 96, 40).fill('#f0f9ff');
+doc.fillColor('#1e63ff').fontSize(12).text(note, 56, 138, { width: doc.page.width - 112 });
+doc.fillColor('#111827');
+
+// Details table
+const rows = [
+['Status', 'Completed'],
+['Service', String(service)],
+['Files Received', String(files)],
+['Email Confirmation', String(emailOK)],
+['Reference ID', String(ref)],
+['Date & Time', String(dateTime)]
+];
+let y = 190;
+rows.forEach(([k, v]) => {
+doc.moveTo(48, y).lineTo(doc.page.width - 48, y).strokeColor('#f1f5f9').stroke();
+y += 10;
+doc.fillColor('#64748b').fontSize(12).text(k, 48, y);
+doc.fillColor('#111827').font('Helvetica-Bold').text(v, 300, y, { align: 'right' });
+doc.font('Helvetica');
+y += 22;
+});
+doc.moveTo(48, y).lineTo(doc.page.width - 48, y).strokeColor('#f1f5f9').stroke();
+
+// Footer
+doc.moveDown(2);
+doc.fillColor('#475569').fontSize(10)
+.text('📞 (317) 935-9067 | 🌐 www.taxlakay.com | 📧 lakaytax@gmail.com', { align: 'center' });
+doc.fillColor('#94a3b8')
+.text(`© ${new Date().getFullYear()} Tax Lakay. All rights reserved.`, { align: 'center' });
+
+doc.end();
+} catch (e) {
+console.error('PDF error:', e);
+res.status(500).json({ error: 'Failed to generate PDF' });
+}
+});
+
+/* ----------------------------- Start server ---------------------------- */
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, '0.0.0.0', () => {
 console.log(`🚀 Tax Lakay Backend running on port ${PORT}`);
