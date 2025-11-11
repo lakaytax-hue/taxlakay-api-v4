@@ -4,7 +4,7 @@ const express = require('express');
 const multer = require('multer');
 const cors = require('cors');
 const nodemailer = require('nodemailer');
-const PDFDocument = require('pdfkit'); // <-- added here (single require)
+const PDFDocument = require('pdfkit'); // <-- already present
 
 const app = express();
 
@@ -49,6 +49,37 @@ fs.writeFileSync(LOG_FILE, header);
 }
 }
 ensureLogHeader();
+
+/* ------------------------- Progress tracker store ------------------------- */
+/* === PATCH #1 (new): tiny JSON store under /public for statuses.json === */
+const STATUS_FILE = path.join(PUBLIC_DIR, 'statuses.json');
+
+function loadStatuses() {
+try {
+if (fs.existsSync(STATUS_FILE)) {
+return JSON.parse(fs.readFileSync(STATUS_FILE, 'utf8') || '{}');
+}
+} catch (e) { console.error('loadStatuses error:', e); }
+return {};
+}
+function saveStatuses(obj) {
+try {
+fs.writeFileSync(STATUS_FILE, JSON.stringify(obj, null, 2));
+} catch (e) { console.error('saveStatuses error:', e); }
+}
+
+// Canonical stages shown to customers
+const STAGES = [
+{ key: 'received', label: 'Documents received', percent: 10 },
+{ key: 'intake', label: 'Intake review', percent: 25 },
+{ key: 'prep_in_progress', label: 'Preparing your return', percent: 50 },
+{ key: 'awaiting_docs', label: 'Waiting on missing documents', percent: 55 },
+{ key: 'quality_review', label: 'Quality review', percent: 75 },
+{ key: 'ready_to_file', label: 'Ready to e-file', percent: 90 },
+{ key: 'filed', label: 'E-filed — awaiting IRS', percent: 95 },
+{ key: 'accepted', label: 'Accepted by IRS', percent: 100 }
+];
+function stageInfo(key) { return STAGES.find(s => s.key === key) || null; }
 
 /* ----------------------------- Multer conf ---------------------------- */
 const upload = multer({
@@ -260,6 +291,23 @@ if (err) console.error('CSV append error:', err);
 console.error('CSV logging failed:', e);
 }
 
+/* === PATCH #2 (new): initialize progress at "received" === */
+try {
+const db = loadStatuses();
+const now = new Date().toISOString();
+const first = stageInfo('received');
+db[referenceNumber] = {
+ref: referenceNumber,
+stage: 'received',
+percent: first ? first.percent : 10,
+updatedAt: now,
+history: [{ at: now, stage: 'received', percent: first ? first.percent : 10, note: 'Files uploaded' }]
+};
+saveStatuses(db);
+} catch (e) {
+console.error('init progress error:', e);
+}
+
 // Response to frontend
 res.json({
 ok: true,
@@ -298,7 +346,7 @@ doc.rect(0, 0, doc.page.width, 60).fill('#1e63ff');
 doc.fillColor('white').fontSize(20).text('TAX LAKAY', 50, 20);
 doc.fillColor('white').fontSize(10).text('www.taxlakay.com', 420, 28, { align: 'right' });
 
-// Logo from local /public/logo.png (fix for previous broken path)
+// Logo from local /public/logo.png
 const logoPath = path.join(__dirname, 'public', 'logo.png');
 if (fs.existsSync(logoPath)) {
 doc.image(logoPath, doc.page.width - 120, 15, { width: 60 });
@@ -408,6 +456,70 @@ doc.end();
 console.error('PDF error:', e);
 res.status(500).json({ error: 'Failed to generate PDF' });
 }
+});
+
+/* ----------------------------- Progress API ------------------------------ */
+/* === PATCH #3 (new): public read & admin update endpoints =============== */
+
+// Public: check progress by reference ID (used by your website)
+app.get('/api/progress/:ref', (req, res) => {
+const ref = (req.params.ref || '').trim();
+if (!ref) return res.status(400).json({ ok: false, error: 'Missing ref' });
+
+const db = loadStatuses();
+const row = db[ref];
+if (!row) {
+return res.json({
+ok: true, ref, exists: false, stage: null, percent: 0,
+label: 'Not found', updatedAt: null, history: []
+});
+}
+const info = stageInfo(row.stage) || {};
+res.json({
+ok: true,
+ref,
+exists: true,
+stage: row.stage,
+percent: ('percent' in row) ? row.percent : (info.percent || 0),
+label: info.label || row.stage,
+updatedAt: row.updatedAt || null,
+history: row.history || []
+});
+});
+
+// Admin: update progress (protect with X-ADMIN-TOKEN = process.env.ADMIN_TOKEN)
+app.post('/api/progress/update', (req, res) => {
+const token = req.headers['x-admin-token'];
+if (!process.env.ADMIN_TOKEN || token !== process.env.ADMIN_TOKEN) {
+return res.status(401).json({ ok: false, error: 'Unauthorized' });
+}
+
+const { ref, stage, note, percent } = req.body || {};
+if (!ref || !stage) return res.status(400).json({ ok: false, error: 'ref and stage required' });
+
+const db = loadStatuses();
+const now = new Date().toISOString();
+const info = stageInfo(stage);
+const pct = (typeof percent === 'number') ? percent : (info ? info.percent : 0);
+
+const prev = db[ref] || { ref, history: [] };
+const entry = { at: now, stage, percent: pct, note: note || '' };
+
+db[ref] = {
+ref,
+stage,
+percent: pct,
+updatedAt: now,
+history: [...(prev.history || []), entry]
+};
+
+saveStatuses(db);
+res.json({ ok: true, ref, stage, percent: pct, updatedAt: now });
+});
+
+// Optional: expose canonical stages for your admin page presets
+app.get('/api/progress-stages', (_req, res) => {
+res.json({ ok: true, stages: STAGES });
 });
 
 /* ----------------------------- Start server ---------------------------- */
