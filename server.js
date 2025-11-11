@@ -570,19 +570,6 @@ return false;
 }
 }
 
-// Simple list of allowed stages (keep in sync with your admin page)
-const STAGES = [
-'Received',
-'In Review',
-'Pending Docs',
-'50% Complete',
-'Ready to File',
-'Filed',
-'Accepted',
-'Rejected',
-'Completed'
-];
-
 /* ---------------------- Token verify (admin page) ----------------------- */
 app.get('/api/admin/verify', (req, res) => {
 const t = (req.query.token || '').trim();
