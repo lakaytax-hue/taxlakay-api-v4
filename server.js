@@ -522,6 +522,130 @@ app.get('/api/progress-stages', (_req, res) => {
 res.json({ ok: true, stages: STAGES });
 });
 
+/* --------------------------- CORS (add Sites) --------------------------- */
+// Replace your current app.use(cors({...})) with this:
+app.use(cors({
+origin: (origin, cb) => {
+const allow = [
+'https://www.taxlakay.com',
+'https://taxlakay.com',
+'http://localhost:3000',
+'https://sites.google.com' // Google Sites editor/view
+];
+// allow same-origin / undefined (server-to-server, curl, etc.)
+if (!origin || allow.includes(origin)) return cb(null, true);
+return cb(new Error('Not allowed by CORS'));
+},
+credentials: true
+}));
+
+/* ------------------------ Progress tracking store ----------------------- */
+const PROGRESS_FILE = path.join(PUBLIC_DIR, 'progress.json');
+
+// ensure file exists
+function ensureProgressFile() {
+if (!fs.existsSync(PROGRESS_FILE)) {
+fs.writeFileSync(PROGRESS_FILE, JSON.stringify({}), 'utf8');
+}
+}
+ensureProgressFile();
+
+function readProgress() {
+try {
+const raw = fs.readFileSync(PROGRESS_FILE, 'utf8');
+return JSON.parse(raw || '{}');
+} catch (e) {
+console.error('readProgress failed:', e);
+return {};
+}
+}
+
+function writeProgress(db) {
+try {
+fs.writeFileSync(PROGRESS_FILE, JSON.stringify(db, null, 2), 'utf8');
+return true;
+} catch (e) {
+console.error('writeProgress failed:', e);
+return false;
+}
+}
+
+// Simple list of allowed stages (keep in sync with your admin page)
+const STAGES = [
+'Received',
+'In Review',
+'Pending Docs',
+'50% Complete',
+'Ready to File',
+'Filed',
+'Accepted',
+'Rejected',
+'Completed'
+];
+
+/* ---------------------- Token verify (admin page) ----------------------- */
+app.get('/api/admin/verify', (req, res) => {
+const t = (req.query.token || '').trim();
+if (!t) return res.status(400).json({ ok: false, error: 'Missing token' });
+const ok = !!process.env.ADMIN_TOKEN && t === process.env.ADMIN_TOKEN;
+return res.json({ ok });
+});
+
+/* ------------------ Customer endpoint: check progress ------------------- */
+// GET /api/progress?ref=TL123...
+app.get('/api/progress', (req, res) => {
+const refRaw = (req.query.ref || '').trim();
+if (!refRaw) return res.status(400).json({ ok: false, error: 'Missing ref' });
+
+const ref = refRaw.toUpperCase();
+const db = readProgress();
+const row = db[ref];
+
+if (!row) return res.json({ ok: true, ref, found: false });
+
+return res.json({
+ok: true,
+ref,
+found: true,
+status: row.stage,
+note: row.note || '',
+updatedAt: row.updatedAt
+});
+});
+
+/* -------------------- Admin endpoint: update progress ------------------- */
+// POST /api/admin/progress JSON: {token, ref, stage, note}
+app.post('/api/admin/progress', (req, res) => {
+try {
+const { token, ref, stage, note } = req.body || {};
+
+if (!token || token !== process.env.ADMIN_TOKEN) {
+return res.status(401).json({ ok: false, error: 'Unauthorized' });
+}
+if (!ref || !stage) {
+return res.status(400).json({ ok: false, error: 'Missing ref or stage' });
+}
+if (!STAGES.includes(stage)) {
+return res.status(400).json({ ok: false, error: 'Invalid stage' });
+}
+
+const key = String(ref).trim().toUpperCase();
+const db = readProgress();
+db[key] = {
+stage,
+note: note || '',
+updatedAt: new Date().toISOString()
+};
+if (!writeProgress(db)) {
+return res.status(500).json({ ok: false, error: 'Failed to persist' });
+}
+return res.json({ ok: true, ref: key, stage: db[key].stage, updatedAt: db[key].updatedAt });
+} catch (e) {
+console.error('admin /progress error:', e);
+return res.status(500).json({ ok: false, error: 'Server error' });
+}
+});
+
 /* ----------------------------- Start server ---------------------------- */
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, '0.0.0.0', () => {
