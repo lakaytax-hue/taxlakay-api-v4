@@ -10,9 +10,10 @@ const app = express();
 
 /* ----------------------------- Middleware ----------------------------- */
 app.use(cors({
-origin: ['https://www.taxlakay.com', 'https://taxlakay.com', 'http://localhost:3000'],
+origin: (process.env.ALLOW_ORIGIN || '').split(','),
 credentials: true
 }));
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
