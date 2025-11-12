@@ -98,10 +98,6 @@ if (process.env.NODE_ENV !== 'production') body.reason = reason;
 res.json(body);
 });
 
-/* ----------------------- Upload API ----------------------- */
-app.post('/api/upload', upload.any(), async (req, res) => {
-...
-  
 /* ------------------------------ Upload API ---------------------------- */
 // Accept any file field name (handles "documents" or "files")
 app.post('/api/upload', upload.any(), async (req, res) => {
