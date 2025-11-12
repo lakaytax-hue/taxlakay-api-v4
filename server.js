@@ -445,8 +445,6 @@ maxAge: 86400
 app.options('*', cors()); // handle preflight everywhere
 
 /* ------------------------ Progress tracking store ------------------------- */
-const PUBLIC_DIR = path.join(__dirname, 'public'); // ensure this is defined
-if (!fs.existsSync(PUBLIC_DIR)) fs.mkdirSync(PUBLIC_DIR, { recursive: true });
 
 const PROGRESS_FILE = path.join(PUBLIC_DIR, 'progress.json');
 
