@@ -79,6 +79,29 @@ app.get('/health', (req, res) => {
 res.json({ status: 'OK', service: 'Tax Lakay Backend' });
 });
 
+// --------------------- Admin token verify ---------------------
+app.get('/api/admin/verify', (req, res) => {
+const q = (req.query.token || '').trim();
+const h = (req.get('X-Admin-Token') || '').trim();
+const provided = q || h;
+const expected = (process.env.ADMIN_TOKEN || '').trim();
+
+const ok = !!expected && !!provided && provided === expected;
+
+const reason = !expected ? 'server_missing_env'
+: !provided ? 'no_token_provided'
+: (provided !== expected ? 'mismatch' : 'ok');
+
+const body = { ok };
+if (process.env.NODE_ENV !== 'production') body.reason = reason;
+
+res.json(body);
+});
+
+/* ----------------------- Upload API ----------------------- */
+app.post('/api/upload', upload.any(), async (req, res) => {
+...
+  
 /* ------------------------------ Upload API ---------------------------- */
 // Accept any file field name (handles "documents" or "files")
 app.post('/api/upload', upload.any(), async (req, res) => {
