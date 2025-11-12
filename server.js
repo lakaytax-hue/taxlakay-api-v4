@@ -4,27 +4,48 @@ const express = require('express');
 const multer = require('multer');
 const cors = require('cors');
 const nodemailer = require('nodemailer');
-const PDFDocument = require('pdfkit'); // <-- added here (single require)
+const PDFDocument = require('pdfkit');
 
 const app = express();
 
-/* ----------------------------- Middleware ----------------------------- */
+/* ----------------------------- CORS (unified) ----------------------------- */
+const ALLOWED_HOSTS = new Set([
+'www.taxlakay.com',
+'taxlakay.com',
+'sites.google.com' // editor & viewer
+]);
+function isAllowedOrigin(origin) {
+if (!origin) return true; // server-to-server, curl, health checks
+try {
+const u = new URL(origin);
+if (u.protocol !== 'https:') return false;
+if (ALLOWED_HOSTS.has(u.host)) return true;
+// Google Sites iframes are served from *.googleusercontent.com
+if (/\.googleusercontent\.com$/i.test(u.host)) return true;
+return false;
+} catch {
+return false;
+}
+}
 app.use(cors({
-origin: (process.env.ALLOW_ORIGIN || '').split(','),
-credentials: true
+origin: (origin, cb) => cb(null, isAllowedOrigin(origin)),
+credentials: true,
+methods: ['GET', 'POST', 'OPTIONS'],
+allowedHeaders: ['Content-Type', 'Authorization', 'X-Admin-Token'],
+maxAge: 86400
 }));
+app.options('*', cors());
 
+/* ----------------------------- Body parsers ------------------------------- */
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-/* --------------------------- Public / Static -------------------------- */
+/* --------------------------- Public / Static ------------------------------ */
 const PUBLIC_DIR = path.join(__dirname, 'public');
 if (!fs.existsSync(PUBLIC_DIR)) fs.mkdirSync(PUBLIC_DIR, { recursive: true });
+app.use(express.static(PUBLIC_DIR)); // serve logo.png, logs, etc.
 
-// Serve static files from "public" (logo.png, logs, etc.)
-app.use(express.static(PUBLIC_DIR));
-
-/* ------------------------------ CSV Log ------------------------------- */
+/* ------------------------------ CSV Log ---------------------------------- */
 const LOG_FILE = path.join(PUBLIC_DIR, 'uploads_log.csv');
 
 function csvEscape(v) {
@@ -51,7 +72,7 @@ fs.writeFileSync(LOG_FILE, header);
 }
 ensureLogHeader();
 
-/* ----------------------------- Multer conf ---------------------------- */
+/* ----------------------------- Multer conf -------------------------------- */
 const upload = multer({
 storage: multer.memoryStorage(),
 limits: {
@@ -60,9 +81,9 @@ files: 10
 }
 });
 
-/* ------------------------- Email transporter -------------------------- */
+/* ------------------------- Email transporter ------------------------------ */
 const createTransporter = () => {
-// Using Gmail (App Password recommended)
+// Gmail (App Password recommended)
 return nodemailer.createTransport({
 service: 'gmail',
 auth: {
@@ -72,7 +93,7 @@ pass: process.env.EMAIL_PASS
 });
 };
 
-/* -------------------------------- Health ------------------------------ */
+/* ------------------------------ Health ----------------------------------- */
 app.get('/', (req, res) => {
 res.json({ message: 'Tax Lakay Backend is running!', timestamp: new Date().toISOString() });
 });
@@ -80,26 +101,22 @@ app.get('/health', (req, res) => {
 res.json({ status: 'OK', service: 'Tax Lakay Backend' });
 });
 
-// --------------------- Admin token verify ---------------------
+/* ---------------------- Admin token reader (unified) ---------------------- */
+function readAdminToken(req) {
+const h = req.headers['authorization'] || '';
+if (h.toLowerCase().startsWith('bearer ')) return h.slice(7).trim();
+return (req.get('X-Admin-Token') || req.query.token || req.body?.token || '').trim();
+}
+
+/* ---------------------------- Admin: verify token ------------------------- */
 app.get('/api/admin/verify', (req, res) => {
-const q = (req.query.token || '').trim();
-const h = (req.get('X-Admin-Token') || '').trim();
-const provided = q || h;
+const token = readAdminToken(req);
 const expected = (process.env.ADMIN_TOKEN || '').trim();
-
-const ok = !!expected && !!provided && provided === expected;
-
-const reason = !expected ? 'server_missing_env'
-: !provided ? 'no_token_provided'
-: (provided !== expected ? 'mismatch' : 'ok');
-
-const body = { ok };
-if (process.env.NODE_ENV !== 'production') body.reason = reason;
-
-res.json(body);
+const ok = !!expected && token === expected;
+res.json({ ok });
 });
 
-/* ------------------------------ Upload API ---------------------------- */
+/* ------------------------------ Upload API -------------------------------- */
 // Accept any file field name (handles "documents" or "files")
 app.post('/api/upload', upload.any(), async (req, res) => {
 try {
@@ -122,6 +139,8 @@ SEND_CLIENT_RECEIPT
 } = req.body;
 
 const sendClientReceipt = SEND_CLIENT_RECEIPT !== 'false';
+
+// Single source of truth for the reference number
 const referenceNumber = `TL${Date.now().toString().slice(-6)}`;
 
 const transporter = createTransporter();
@@ -259,7 +278,7 @@ console.log('✅ Admin notification email sent to lakaytax@gmail.com');
 
 // --- CSV log append ---
 try {
-const ref = referenceNumber; // fixed (was referenceId)
+const ref = referenceNumber;
 const files = (req.files || []).map(f => f.originalname);
 const row = [
 new Date().toISOString(),
@@ -295,7 +314,7 @@ res.status(500).json({ ok: false, error: 'Upload failed: ' + error.message });
 }
 });
 
-/* --------------------- PDF route for Refund Estimator ------------------- */
+/* --------------------- PDF route for Refund Estimator --------------------- */
 app.get('/api/estimator-pdf', (req, res) => {
 const {
 estimate = '—',
@@ -318,7 +337,6 @@ doc.rect(0, 0, doc.page.width, 60).fill('#1e63ff');
 doc.fillColor('white').fontSize(20).text('TAX LAKAY', 50, 20);
 doc.fillColor('white').fontSize(10).text('www.taxlakay.com', 420, 28, { align: 'right' });
 
-// Logo from local /public/logo.png (fix for previous broken path)
 const logoPath = path.join(__dirname, 'public', 'logo.png');
 if (fs.existsSync(logoPath)) {
 doc.image(logoPath, doc.page.width - 120, 15, { width: 60 });
@@ -352,8 +370,7 @@ doc.moveDown()
 doc.end();
 });
 
-/* -------------------- NEW: Receipt PDF (Server-side) -------------------- */
-// Opens a real PDF for iPhone/Google Sites (works with <form target="_blank">)
+/* -------------------- Receipt PDF (Server-side) -------------------------- */
 app.get('/api/receipt-pdf', (req, res) => {
 try {
 const {
@@ -430,42 +447,7 @@ res.status(500).json({ error: 'Failed to generate PDF' });
 }
 });
 
-/* ----------------------------- Start server ---------------------------- */
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, '0.0.0.0', () => {
-console.log(`🚀 Tax Lakay Backend running on port ${PORT}`);
-console.log(`✅ Health check: http://localhost:${PORT}/health`);
-});
-const ALLOWED_HOSTS = new Set([
-'www.taxlakay.com',
-'taxlakay.com',
-'sites.google.com' // editor & viewer
-]);
-function isAllowedOrigin(origin) {
-if (!origin) return true; // server-to-server, curl, health checks
-try {
-const { protocol, host } = new URL(origin);
-if (protocol !== 'https:') return false;
-if (ALLOWED_HOSTS.has(host)) return true;
-// Google Sites iframes are served from *.googleusercontent.com
-if (/\.googleusercontent\.com$/.test(host)) return true;
-return false;
-} catch {
-return false;
-}
-}
-
-app.use(cors({
-origin: (origin, cb) => cb(null, isAllowedOrigin(origin)),
-credentials: true,
-methods: ['GET', 'POST', 'OPTIONS'],
-allowedHeaders: ['Content-Type', 'Authorization', 'X-Admin-Token'],
-maxAge: 86400
-}));
-app.options('*', cors()); // handle preflight everywhere
-
-/* ------------------------ Progress tracking store ------------------------- */
-
+/* ------------------------ Progress tracking store ------------------------ */
 const PROGRESS_FILE = path.join(PUBLIC_DIR, 'progress.json');
 
 function ensureProgressFile() {
@@ -499,43 +481,15 @@ return false;
 }
 }
 
-// Keep this list in sync with your admin UI
-const STAGES = [
-'Received',
-'In Review',
-'Pending Docs',
-'50% Complete',
-'Ready to File',
-'Filed',
-'Accepted',
-'Rejected',
-'Completed'
-];
-
-/* ---------------------- Token verify (admin page) ------------------------- */
-// Accept token in query or header (X-Admin-Token) for flexibility
-app.get('/api/admin/verify', (req, res) => {
-const q = (req.query.token || '').trim();
-const h = (req.get('X-Admin-Token') || '').trim();
-const t = q || h;
-if (!t) return res.status(400).json({ ok: false, error: 'Missing token' });
-const ok = !!process.env.ADMIN_TOKEN && t === process.env.ADMIN_TOKEN;
-return res.json({ ok });
-});
-
-/* ------------------ Customer endpoint: check progress --------------------- */
+/* ------------------ Customer: check progress (GET) ------------------------ */
 // GET /api/progress?ref=TL123...
 app.get('/api/progress', (req, res) => {
-const refRaw = (req.query.ref || '').trim();
-if (!refRaw) return res.status(400).json({ ok: false, error: 'Missing ref' });
-
-const ref = refRaw.toUpperCase();
+const ref = (req.query.ref || '').trim().toUpperCase();
+if (!ref) return res.status(400).json({ ok: false, error: 'Missing ref' });
 const db = readProgress();
 const row = db[ref];
-
 if (!row) return res.json({ ok: true, ref, found: false });
-
-return res.json({
+res.json({
 ok: true,
 ref,
 found: true,
@@ -545,23 +499,23 @@ updatedAt: row.updatedAt
 });
 });
 
-/* --------------------- Admin endpoint: update progress -------------------- */
-// POST /api/admin/progress JSON: { token, ref, stage, note }
-app.post('/api/admin/progress', (req, res) => {
-try {
-const headerToken = (req.get('X-Admin-Token') || '').trim();
-const { token: bodyToken, ref, stage, note } = req.body || {};
-const token = bodyToken || headerToken;
+/* --------------------- Admin: update progress (POST) ---------------------- */
+const STAGES = [
+// New UI stages
+'Received','In Progress','Awaiting Documents','Completed','E-Filed','IRS Accepted',
+// Keep compatibility with older UI
+'In Review','Pending Docs','50% Complete','Ready to File','Filed','Accepted','Rejected'
+];
 
-if (!token || token !== process.env.ADMIN_TOKEN) {
+function handleAdminUpdate(req, res) {
+try {
+const token = readAdminToken(req);
+if (!token || token !== (process.env.ADMIN_TOKEN || '').trim()) {
 return res.status(401).json({ ok: false, error: 'Unauthorized' });
 }
-if (!ref || !stage) {
-return res.status(400).json({ ok: false, error: 'Missing ref or stage' });
-}
-if (!STAGES.includes(stage)) {
-return res.status(400).json({ ok: false, error: 'Invalid stage' });
-}
+const { ref, stage, note } = req.body || {};
+if (!ref || !stage) return res.status(400).json({ ok: false, error: 'Missing ref or stage' });
+if (!STAGES.includes(stage)) return res.status(400).json({ ok: false, error: 'Invalid stage' });
 
 const key = String(ref).trim().toUpperCase();
 const db = readProgress();
@@ -577,20 +531,29 @@ return res.status(500).json({ ok: false, error: 'Failed to persist' });
 
 return res.json({ ok: true, ref: key, stage: db[key].stage, updatedAt: db[key].updatedAt });
 } catch (e) {
-console.error('admin /progress error:', e);
+console.error('admin update error:', e);
 return res.status(500).json({ ok: false, error: 'Server error' });
 }
-});
+}
+app.post('/api/admin/progress', handleAdminUpdate); // legacy path
+app.post('/api/admin/update', handleAdminUpdate); // path used by your embed
 
 /* -------- Optional: debug endpoint to read progress (token required) ------ */
-// GET /api/admin/progress?ref=TL123...
+// GET /api/admin/progress?ref=TL123...&token=...
 app.get('/api/admin/progress', (req, res) => {
-const token = (req.query.token || req.get('X-Admin-Token') || '').trim();
-if (!token || token !== process.env.ADMIN_TOKEN) {
+const token = readAdminToken(req);
+if (!token || token !== (process.env.ADMIN_TOKEN || '').trim()) {
 return res.status(401).json({ ok: false, error: 'Unauthorized' });
 }
 const ref = (req.query.ref || '').trim().toUpperCase();
 const db = readProgress();
 if (ref) return res.json({ ok: true, ref, row: db[ref] || null });
 res.json({ ok: true, all: db });
+});
+
+/* ----------------------------- Start server ------------------------------ */
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, '0.0.0.0', () => {
+console.log(`🚀 Tax Lakay Backend running on port ${PORT}`);
+console.log(`✅ Health check: http://localhost:${PORT}/health`);
 });
