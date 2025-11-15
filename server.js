@@ -228,7 +228,7 @@ If we need any additional information, we'll reach out right away.
 
 Your reference number is ${referenceNumber}.
 
-We appreciate your trust and look forward to helping you get the best refund possible!
+You can check your filing status anytime using your Reference ID.
 
 Warm regards,
 The Tax Lakay Team
@@ -253,7 +253,7 @@ If we need any additional information, we'll reach out right away.</p>
 <p style="margin: 0; font-weight: bold;">Your reference number is:
 <span style="color: #1e63ff;">${referenceNumber}</span></p>
 </div>
-<p>We appreciate your trust and look forward to helping you get the best refund possible!</p>
+<p>You can check your filing status anytime using your Reference ID.</p>
 </div>
 
 <div style="text-align: center; margin-top: 25px; padding-top: 20px; border-top: 1px solid #e5e7eb;">
@@ -613,6 +613,151 @@ return false;
 }
 }
 
+/* -------- Helper: CSV parsing + look up client by reference ID ------------ */
+
+// Basic CSV line parser that understands quotes
+function parseCsvLine(line) {
+const result = [];
+let cur = '';
+let inQuotes = false;
+for (let i = 0; i < line.length; i++) {
+const ch = line[i];
+if (ch === '"') {
+if (inQuotes && line[i + 1] === '"') {
+// Escaped quote
+cur += '"';
+i++;
+} else {
+inQuotes = !inQuotes;
+}
+} else if (ch === ',' && !inQuotes) {
+result.push(cur);
+cur = '';
+} else {
+cur += ch;
+}
+}
+result.push(cur);
+return result;
+}
+
+// Find last matching row for ref in uploads_log.csv
+function findClientByRef(ref) {
+try {
+if (!fs.existsSync(LOG_FILE)) return null;
+const raw = fs.readFileSync(LOG_FILE, 'utf8');
+const lines = raw.trim().split('\n');
+if (lines.length <= 1) return null; // only header
+
+// header: timestamp, ref, clientName, clientEmail, clientPhone, ...
+for (let i = lines.length - 1; i >= 1; i--) {
+const cols = parseCsvLine(lines[i]);
+const rowRef = (cols[1] || '').replace(/^"|"$/g, '');
+if (rowRef.toUpperCase() === ref.toUpperCase()) {
+const name = (cols[2] || '').replace(/^"|"$/g, '');
+const email = (cols[3] || '').replace(/^"|"$/g, '');
+const phone = (cols[4] || '').replace(/^"|"$/g, '');
+return { name, email, phone };
+}
+}
+return null;
+} catch (e) {
+console.error('findClientByRef failed:', e);
+return null;
+}
+}
+
+/* -------- Helper: send status update email to customer -------------------- */
+
+async function sendStatusEmail(ref, stage, note) {
+try {
+const client = findClientByRef(ref);
+if (!client || !client.email) {
+console.log(`ℹ️ No email found for ref ${ref}, skipping status email.`);
+return;
+}
+
+const transporter = createTransporter();
+const safeStage = stage || 'Updated';
+const safeName = client.name || 'Valued Customer';
+
+const subject = `Your Tax Lakay filing status has been updated (${safeStage})`;
+
+const text = `
+Hi ${safeName},
+
+This is a quick update from Tax Lakay about your tax return.
+
+Your filing status has been updated to: ${safeStage}
+Reference ID: ${ref}
+${note ? `\nNote from preparer: ${note}\n` : ''}
+
+You can always check your current status online using your Reference ID.
+
+If you have any questions, you can reply to this email or call us at (317) 935-9067.
+
+Warm regards,
+Tax Lakay
+📧 lakaytax@gmail.com
+📞 (317) 935-9067
+💻 https://www.taxlakay.com
+`.trim();
+
+const html = `
+<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; line-height: 1.6;">
+<div style="text-align:center;margin-bottom:18px;">
+<h2 style="color:#1e63ff;margin:0 0 4px;">Your Filing Status Has Been Updated</h2>
+<p style="color:#64748b;margin:0;">Tax Lakay</p>
+</div>
+
+<p>Hi ${safeName},</p>
+<p>This is a quick update from <strong>Tax Lakay</strong> about your tax return.</p>
+
+<div style="background:#f0f9ff;border-radius:10px;padding:14px 16px;margin:12px 0;">
+<p style="margin:0;font-size:14px;">
+<strong>Status:</strong> <span style="color:#1e63ff;font-weight:700;">${safeStage}</span><br>
+<strong>Reference ID:</strong> <span style="font-family:monospace;">${ref}</span>
+${
+note
+? `<br><strong>Note from preparer:</strong> <span style="color:#111827;">${note}</span>`
+: ''
+}
+</p>
+</div>
+
+<p style="font-size:14px;">
+You can always check your current status online using your Reference ID.
+</p>
+
+<p style="font-size:14px;">
+If you have any questions, you can reply to this email or call us at <strong>(317) 935-9067</strong>.
+</p>
+
+<hr style="border:none;border-top:1px solid #e5e7eb;margin:18px 0;">
+
+<p style="text-align:center;font-size:13px;color:#64748b;margin:0;">
+📧 <a href="mailto:lakaytax@gmail.com" style="color:#1e63ff;">lakaytax@gmail.com</a> &nbsp;|&nbsp;
+📞 <a href="tel:13179359067" style="color:#1e63ff;">(317) 935-9067</a> &nbsp;|&nbsp;
+💻 <a href="https://www.taxlakay.com" style="color:#1e63ff;">www.taxlakay.com</a>
+</p>
+</div>
+`.trim();
+
+const mailOptions = {
+from: process.env.EMAIL_USER || 'lakaytax@gmail.com',
+to: client.email,
+subject,
+text,
+html
+};
+
+await transporter.sendMail(mailOptions);
+console.log(`📧 Status email sent to ${client.email} for ref ${ref}`);
+} catch (e) {
+console.error('sendStatusEmail failed:', e);
+}
+}
+
 /* ------------------ Customer: check progress (GET) ------------------------ */
 // GET /api/progress?ref=TL123...
 app.get('/api/progress', (req, res) => {
@@ -675,6 +820,9 @@ updatedAt: new Date().toISOString()
 if (!writeProgress(db)) {
 return res.status(500).json({ ok: false, error: 'Failed to persist' });
 }
+
+// Fire-and-forget: send status update email (if email exists for this ref)
+sendStatusEmail(key, db[key].stage, db[key].note).catch(() => {});
 
 return res.json({
 ok: true,
