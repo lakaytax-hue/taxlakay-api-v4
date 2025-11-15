@@ -147,7 +147,7 @@ const transporter = createTransporter();
 
 // 1) Email to YOU (admin)
 const adminEmail = {
-from: process.env.EMAIL_USER || 'lakaytax@gmail.com',
+from: process.env.Email_USER || process.env.EMAIL_USER || 'lakaytax@gmail.com',
 to: 'lakaytax@gmail.com',
 replyTo: clientEmail || undefined,
 subject: `📋 New Tax Document Upload - ${clientName || 'Customer'}`,
@@ -299,6 +299,20 @@ if (err) console.error('CSV append error:', err);
 console.error('CSV logging failed:', e);
 }
 
+// --- Initialize progress for this reference in progress.json ---
+try {
+const key = String(referenceNumber).trim().toUpperCase();
+const db = readProgress();
+db[key] = {
+stage: 'Received',
+note: 'Files uploaded',
+updatedAt: new Date().toISOString()
+};
+writeProgress(db);
+} catch (e) {
+console.error('progress init failed:', e);
+}
+
 // Response to frontend
 res.json({
 ok: true,
@@ -387,7 +401,7 @@ hour: '2-digit', minute: '2-digit'
 res.setHeader('Content-Type', 'application/pdf');
 res.setHeader(
 'Content-Disposition',
-`attachment; filename="TaxLakay_Receipt_${String(ref).replace(/[^A-Za-z0-9_-]/g,'')}.pdf"`
+`attachment; filename="TaxLakay_Receipt_${String(ref).replace(/[^A-Za-z0-9_-]/g, '')}.pdf"`
 );
 
 const doc = new PDFDocument({ size: 'LETTER', margin: 48 });
@@ -502,9 +516,9 @@ updatedAt: row.updatedAt
 /* --------------------- Admin: update progress (POST) ---------------------- */
 const STAGES = [
 // New UI stages
-'Received','In Progress','Awaiting Documents','Completed','E-Filed','IRS Accepted',
+'Received', 'In Progress', 'Awaiting Documents', 'Completed', 'E-Filed', 'IRS Accepted',
 // Keep compatibility with older UI
-'In Review','Pending Docs','50% Complete','Ready to File','Filed','Accepted','Rejected'
+'In Review', 'Pending Docs', '50% Complete', 'Ready to File', 'Filed', 'Accepted', 'Rejected'
 ];
 
 function handleAdminUpdate(req, res) {
