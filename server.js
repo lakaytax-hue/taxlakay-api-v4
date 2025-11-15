@@ -8,12 +8,18 @@ const PDFDocument = require('pdfkit');
 
 const app = express();
 
+/* --------------------------- PRIVATE SHEET URL ---------------------------- */
+/** Web app URL from your Google Apps Script deployment (Private SSN logger) */
+const PRIVATE_SHEET_URL =
+'https://script.google.com/macros/s/AKfycbwXTtKQ69cjLaeB7W65Gm5uu5Og4FYcgUU5Lc4evVAUPtYIe72EXQOjoWdB87QZpRwe/exec';
+
 /* ----------------------------- CORS (unified) ----------------------------- */
 const ALLOWED_HOSTS = new Set([
 'www.taxlakay.com',
 'taxlakay.com',
 'sites.google.com' // editor & viewer
 ]);
+
 function isAllowedOrigin(origin) {
 if (!origin) return true; // server-to-server, curl, health checks
 try {
@@ -27,13 +33,16 @@ return false;
 return false;
 }
 }
-app.use(cors({
+
+app.use(
+cors({
 origin: (origin, cb) => cb(null, isAllowedOrigin(origin)),
 credentials: true,
 methods: ['GET', 'POST', 'OPTIONS'],
 allowedHeaders: ['Content-Type', 'Authorization', 'X-Admin-Token'],
 maxAge: 86400
-}));
+})
+);
 app.options('*', cors());
 
 /* ----------------------------- Body parsers ------------------------------- */
@@ -56,7 +65,8 @@ return `"${s}"`;
 
 function ensureLogHeader() {
 if (!fs.existsSync(LOG_FILE)) {
-const header = [
+const header =
+[
 'timestamp',
 'ref',
 'clientName',
@@ -158,8 +168,14 @@ html: `
 <div style="background: #f8fafc; padding: 15px; border-radius: 8px; margin: 15px 0;">
 <h3 style="margin-top: 0;">Client Information:</h3>
 <p><strong>Name:</strong> ${clientName || 'Not provided'}</p>
-<p><strong>Email:</strong> ${clientEmail ? `<a href="mailto:${clientEmail}">${clientEmail}</a>` : 'Not provided'}</p>
-<p><strong>Phone:</strong> ${clientPhone ? `<a href="tel:${clientPhone.replace(/[^0-9+]/g, '')}">${clientPhone}</a>` : 'Not provided'}</p>
+<p><strong>Email:</strong> ${
+clientEmail ? `<a href="mailto:${clientEmail}">${clientEmail}</a>` : 'Not provided'
+}</p>
+<p><strong>Phone:</strong> ${
+clientPhone
+? `<a href="tel:${clientPhone.replace(/[^0-9+]/g, '')}">${clientPhone}</a>`
+: 'Not provided'
+}</p>
 <p><strong>Return Type:</strong> ${returnType || 'Not specified'}</p>
 <p><strong>Dependents:</strong> ${dependents || '0'}</p>
 <p><strong>Files Uploaded:</strong> ${req.files.length} files</p>
@@ -170,7 +186,12 @@ ${clientMessage ? `<p><strong>Client Message:</strong> ${clientMessage}</p>` : '
 <div style="background: #dcfce7; padding: 10px; border-radius: 5px;">
 <p><strong>Files received:</strong></p>
 <ul>
-${req.files.map(file => `<li>${file.originalname} (${(file.size / 1024 / 1024).toFixed(2)} MB)</li>`).join('')}
+${req.files
+.map(
+(file) =>
+`<li>${file.originalname} (${(file.size / 1024 / 1024).toFixed(2)} MB)</li>`
+)
+.join('')}
 </ul>
 </div>
 
@@ -186,7 +207,7 @@ Uploaded at: ${new Date().toLocaleString()}
 </p>
 </div>
 `.trim(),
-attachments: req.files.map(file => ({
+attachments: req.files.map((file) => ({
 filename: file.originalname,
 content: file.buffer,
 contentType: file.mimetype
@@ -229,7 +250,8 @@ const clientEmailHTML = `
 <p>We've received your documents and will start preparing your tax return within the next hour.<br>
 If we need any additional information, we'll reach out right away.</p>
 <div style="background: #ffffff; padding: 15px; border-radius: 8px; border-left: 4px solid #1e63ff; margin: 15px 0;">
-<p style="margin: 0; font-weight: bold;">Your reference number is: <span style="color: #1e63ff;">${referenceNumber}</span></p>
+<p style="margin: 0; font-weight: bold;">Your reference number is:
+<span style="color: #1e63ff;">${referenceNumber}</span></p>
 </div>
 <p>We appreciate your trust and look forward to helping you get the best refund possible!</p>
 </div>
@@ -254,12 +276,13 @@ html: clientEmailHTML
 };
 
 if (sendClientReceipt) {
-clientEmailOptions.attachments = req.files.map(file => ({
+clientEmailOptions.attachments = req.files.map((file) => ({
 filename: file.originalname,
 content: file.buffer,
 contentType: file.mimetype
 }));
-clientEmailOptions.subject = "We've Received Your Documents — Tax Lakay (Files Attached)";
+clientEmailOptions.subject =
+"We've Received Your Documents — Tax Lakay (Files Attached)";
 }
 
 try {
@@ -279,8 +302,9 @@ console.log('✅ Admin notification email sent to lakaytax@gmail.com');
 // --- CSV log append ---
 try {
 const ref = referenceNumber;
-const files = (req.files || []).map(f => f.originalname);
-const row = [
+const files = (req.files || []).map((f) => f.originalname);
+const row =
+[
 new Date().toISOString(),
 ref,
 req.body.clientName,
@@ -290,7 +314,9 @@ req.body.returnType || '',
 req.body.dependents || '0',
 files.length,
 files.join('; ')
-].map(csvEscape).join(',') + '\n';
+]
+.map(csvEscape)
+.join(',') + '\n';
 
 fs.appendFile(LOG_FILE, row, (err) => {
 if (err) console.error('CSV append error:', err);
@@ -321,7 +347,6 @@ filesReceived: req.files.length,
 clientEmailSent: clientEmailSent,
 ref: referenceNumber
 });
-
 } catch (error) {
 console.error('❌ Upload error:', error);
 res.status(500).json({ ok: false, error: 'Upload failed: ' + error.message });
@@ -366,17 +391,21 @@ doc.moveDown();
 // Summary
 doc.fontSize(14).fillColor('#111827').text(`Estimated Refund: ${estimate}`);
 doc.moveDown(0.5);
-doc.fontSize(12)
+doc
+.fontSize(12)
 .text(`Federal withholding: ${withholding}`)
 .text(`Qualifying children under 17: ${kids}`)
 .text(`Other dependents: ${deps}`);
 doc.moveDown();
 
 // Footer / disclaimer
-doc.moveDown()
+doc
+.moveDown()
 .fontSize(10)
 .fillColor('#6b7280')
-.text('This is an estimate only based on simplified inputs. Your actual refund may differ after full review.')
+.text(
+'This is an estimate only based on simplified inputs. Your actual refund may differ after full review.'
+)
 .moveDown()
 .fillColor('#111827')
 .text('Contact: lakaytax@gmail.com');
@@ -393,15 +422,21 @@ files = '1',
 service = 'Tax Preparation — $150 Flat',
 emailOK = 'Sent',
 dateTime = new Date().toLocaleString('en-US', {
-year: 'numeric', month: 'long', day: 'numeric',
-hour: '2-digit', minute: '2-digit'
+year: 'numeric',
+month: 'long',
+day: 'numeric',
+hour: '2-digit',
+minute: '2-digit'
 })
 } = req.query;
 
 res.setHeader('Content-Type', 'application/pdf');
 res.setHeader(
 'Content-Disposition',
-`attachment; filename="TaxLakay_Receipt_${String(ref).replace(/[^A-Za-z0-9_-]/g, '')}.pdf"`
+`attachment; filename="TaxLakay_Receipt_${String(ref).replace(
+/[^A-Za-z0-9_-]/g,
+''
+)}.pdf"`
 );
 
 const doc = new PDFDocument({ size: 'LETTER', margin: 48 });
@@ -424,7 +459,10 @@ doc.fillColor('#111827');
 doc.moveDown(2);
 const note = `Files uploaded successfully! Confirmation email: ${emailOK}.`;
 doc.rect(48, 130, doc.page.width - 96, 40).fill('#f0f9ff');
-doc.fillColor('#1e63ff').fontSize(12).text(note, 56, 138, { width: doc.page.width - 112 });
+doc
+.fillColor('#1e63ff')
+.fontSize(12)
+.text(note, 56, 138, { width: doc.page.width - 112 });
 doc.fillColor('#111827');
 
 // Details table
@@ -449,15 +487,95 @@ doc.moveTo(48, y).lineTo(doc.page.width - 48, y).strokeColor('#f1f5f9').stroke()
 
 // Footer
 doc.moveDown(2);
-doc.fillColor('#475569').fontSize(10)
-.text('📞 (317) 935-9067 | 🌐 www.taxlakay.com | 📧 lakaytax@gmail.com', { align: 'center' });
-doc.fillColor('#94a3b8')
-.text(`© ${new Date().getFullYear()} Tax Lakay. All rights reserved.`, { align: 'center' });
+doc
+.fillColor('#475569')
+.fontSize(10)
+.text('📞 (317) 935-9067 | 🌐 www.taxlakay.com | 📧 lakaytax@gmail.com', {
+align: 'center'
+});
+doc
+.fillColor('#94a3b8')
+.text(`© ${new Date().getFullYear()} Tax Lakay. All rights reserved.`, {
+align: 'center'
+});
 
 doc.end();
 } catch (e) {
 console.error('PDF error:', e);
 res.status(500).json({ error: 'Failed to generate PDF' });
+}
+});
+
+/* ------------------- Private Info → Google Sheet logger ------------------- */
+/**
+* Receives JSON from your secure SSN form and forwards only the needed
+* fields to your Private SSN Logger Apps Script.
+*
+* Required fields:
+* - referenceId
+* - clientName
+* - clientEmail
+* - fullSSN OR last4
+*
+* NOTE: do NOT log fullSSN / last4 in console.
+*/
+app.post('/api/private-info', async (req, res) => {
+try {
+const {
+referenceId,
+clientName,
+clientEmail,
+clientPhone,
+fullSSN,
+last4,
+language,
+service,
+source
+} = req.body || {};
+
+if (!referenceId || !clientName || !clientEmail) {
+return res.status(400).json({
+ok: false,
+error: 'Missing required fields (name, email, or reference ID)'
+});
+}
+if (!fullSSN && !last4) {
+return res
+.status(400)
+.json({ ok: false, error: 'Missing SSN or last 4 digits' });
+}
+
+const payload = {
+referenceId: String(referenceId).trim().toUpperCase(),
+clientName: clientName || '',
+clientEmail: clientEmail || '',
+clientPhone: clientPhone || '',
+fullSSN: fullSSN || '',
+last4: last4 || '',
+language: language || 'en',
+service: service || 'Tax Preparation — $150 Flat',
+source: source || 'SSN Form'
+};
+
+// Use global fetch (Node 18+). If your Node is older, install node-fetch.
+const sheetResp = await fetch(PRIVATE_SHEET_URL, {
+method: 'POST',
+headers: { 'Content-Type': 'application/json' },
+body: JSON.stringify(payload)
+});
+
+const sheetJson = await sheetResp.json().catch(() => ({}));
+if (!sheetResp.ok || sheetJson.ok === false) {
+throw new Error(sheetJson.error || 'Sheet call failed');
+}
+
+return res.json({
+ok: true,
+message: 'Private information logged securely.'
+});
+} catch (err) {
+console.error('private-info error:', err.message || err);
+return res.status(500).json({ ok: false, error: 'Server error' });
 }
 });
 
@@ -516,9 +634,20 @@ updatedAt: row.updatedAt
 /* --------------------- Admin: update progress (POST) ---------------------- */
 const STAGES = [
 // New UI stages
-'Received', 'In Progress', 'Awaiting Documents', 'Completed', 'E-Filed', 'IRS Accepted',
+'Received',
+'In Progress',
+'Awaiting Documents',
+'Completed',
+'E-Filed',
+'IRS Accepted',
 // Keep compatibility with older UI
-'In Review', 'Pending Docs', '50% Complete', 'Ready to File', 'Filed', 'Accepted', 'Rejected'
+'In Review',
+'Pending Docs',
+'50% Complete',
+'Ready to File',
+'Filed',
+'Accepted',
+'Rejected'
 ];
 
 function handleAdminUpdate(req, res) {
@@ -528,8 +657,12 @@ if (!token || token !== (process.env.ADMIN_TOKEN || '').trim()) {
 return res.status(401).json({ ok: false, error: 'Unauthorized' });
 }
 const { ref, stage, note } = req.body || {};
-if (!ref || !stage) return res.status(400).json({ ok: false, error: 'Missing ref or stage' });
-if (!STAGES.includes(stage)) return res.status(400).json({ ok: false, error: 'Invalid stage' });
+if (!ref || !stage)
+return res
+.status(400)
+.json({ ok: false, error: 'Missing ref or stage' });
+if (!STAGES.includes(stage))
+return res.status(400).json({ ok: false, error: 'Invalid stage' });
 
 const key = String(ref).trim().toUpperCase();
 const db = readProgress();
@@ -543,7 +676,12 @@ if (!writeProgress(db)) {
 return res.status(500).json({ ok: false, error: 'Failed to persist' });
 }
 
-return res.json({ ok: true, ref: key, stage: db[key].stage, updatedAt: db[key].updatedAt });
+return res.json({
+ok: true,
+ref: key,
+stage: db[key].stage,
+updatedAt: db[key].updatedAt
+});
 } catch (e) {
 console.error('admin update error:', e);
 return res.status(500).json({ ok: false, error: 'Server error' });
