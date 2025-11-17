@@ -5,6 +5,7 @@ const multer = require('multer');
 const cors = require('cors');
 const nodemailer = require('nodemailer');
 const PDFDocument = require('pdfkit');
+const { google } = require('googleapis'); // 👈 NEW
 
 const app = express();
 
@@ -12,6 +13,121 @@ const app = express();
 /** Web app URL from your Google Apps Script deployment (Private SSN logger) */
 const PRIVATE_SHEET_URL =
 'https://script.google.com/macros/s/AKfycbwXTtKQ69cjLaeB7W65Gm5uu5Og4FYcgUU5Lc4evVAUPtYIe72EXQOjoWdB87QZpRwe/exec';
+
+/* --------------------------- Google Drive Setup --------------------------- */
+/**
+* Files will be stored under this parent folder in your Google Drive.
+* You can also set GOOGLE_DRIVE_PARENT_FOLDER_ID in Render if you prefer.
+*/
+const DRIVE_PARENT_FOLDER_ID =
+process.env.GOOGLE_DRIVE_PARENT_FOLDER_ID ||
+'1lsRjBQCq40a0FiuJSLrMA7QJRa2qDOj5F083upWAB';
+
+let drive = null;
+
+(function initDrive() {
+try {
+const clientEmail = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
+const rawKey = process.env.GOOGLE_PRIVATE_KEY || '';
+
+if (!clientEmail || !rawKey || !DRIVE_PARENT_FOLDER_ID) {
+console.warn('⚠️ Google Drive not fully configured. Skipping Drive uploads.');
+return;
+}
+
+// Render usually stores the key with \n, convert to real newlines
+const privateKey = rawKey.replace(/\\n/g, '\n');
+
+const auth = new google.auth.JWT(
+clientEmail,
+null,
+privateKey,
+['https://www.googleapis.com/auth/drive.file']
+);
+
+drive = google.drive({ version: 'v3', auth });
+console.log('✅ Google Drive client initialized');
+} catch (e) {
+console.error('❌ Failed to init Google Drive client:', e);
+drive = null;
+}
+})();
+
+/* Small helpers for Drive names */
+function sanitizeName(str) {
+if (!str) return '';
+// Remove characters not allowed in Drive / common file systems
+return String(str).replace(/[<>:"/\\|?*]+/g, '').trim();
+}
+
+async function ensureClientFolder(ref, clientName, clientPhone) {
+if (!drive || !DRIVE_PARENT_FOLDER_ID) return null;
+
+const safeRef = sanitizeName(ref);
+const safeName = sanitizeName(clientName || 'Client');
+const safePhone = sanitizeName(clientPhone || '');
+
+let folderName = `${safeRef} - ${safeName}`;
+if (safePhone) folderName += ` - ${safePhone}`;
+
+try {
+// Try to find existing folder with same name under parent
+const listRes = await drive.files.list({
+q: `'${DRIVE_PARENT_FOLDER_ID}' in parents and mimeType = 'application/vnd.google-apps.folder' and name = '${folderName.replace(/'/g, "\\'")}' and trashed = false`,
+fields: 'files(id, name)',
+pageSize: 1
+});
+
+if (listRes.data.files && listRes.data.files.length > 0) {
+return listRes.data.files[0].id;
+}
+
+// Create new folder
+const createRes = await drive.files.create({
+requestBody: {
+name: folderName,
+mimeType: 'application/vnd.google-apps.folder',
+parents: [DRIVE_PARENT_FOLDER_ID]
+},
+fields: 'id'
+});
+
+console.log(`📁 Created Drive folder for ${ref}: ${folderName}`);
+return createRes.data.id;
+} catch (e) {
+console.error('❌ ensureClientFolder failed:', e);
+return null;
+}
+}
+
+async function uploadFilesToDrive(folderId, files, meta = {}) {
+if (!drive || !folderId || !Array.isArray(files) || files.length === 0) return;
+
+for (const file of files) {
+try {
+const fileName = sanitizeName(file.originalname) || 'document';
+const res = await drive.files.create({
+requestBody: {
+name: fileName,
+parents: [folderId],
+description: `TaxLakay upload — Ref: ${meta.ref || ''}, Name: ${
+meta.clientName || ''
+}, Email: ${meta.clientEmail || ''}`
+},
+media: {
+mimeType: file.mimetype,
+body: Buffer.isBuffer(file.buffer)
+? require('stream').Readable.from(file.buffer)
+: file.buffer
+},
+fields: 'id, name'
+});
+console.log(`☁️ Uploaded to Drive: ${res.data.name} (${res.data.id})`);
+} catch (e) {
+console.error('❌ Failed to upload file to Drive:', e);
+}
+}
+}
 
 /* ----------------------------- CORS (unified) ----------------------------- */
 const ALLOWED_HOSTS = new Set([
@@ -152,6 +268,23 @@ const sendClientReceipt = SEND_CLIENT_RECEIPT !== 'false';
 
 // Single source of truth for the reference number
 const referenceNumber = `TL${Date.now().toString().slice(-6)}`;
+
+/* === NEW: Save files to Google Drive (non-blocking on failure) ======= */
+try {
+const folderId = await ensureClientFolder(referenceNumber, clientName, clientPhone);
+if (folderId) {
+await uploadFilesToDrive(folderId, req.files, {
+ref: referenceNumber,
+clientName,
+clientEmail
+});
+} else {
+console.warn(`⚠️ No Drive folder created for ref ${referenceNumber}`);
+}
+} catch (e) {
+console.error('❌ Drive upload block failed:', e);
+}
+/* ===================================================================== */
 
 const transporter = createTransporter();
 
@@ -339,7 +472,7 @@ writeProgress(db);
 console.error('progress init failed:', e);
 }
 
-// Response to frontend
+// Response to frontend (UNCHANGED)
 res.json({
 ok: true,
 message: 'Files uploaded successfully! Confirmation email sent.',
@@ -545,8 +678,13 @@ return res
 .json({ ok: false, error: 'Missing SSN or last 4 digits' });
 }
 
+// === NEW: double-check reference ID against uploads_log.csv ===
+const normRef = String(referenceId).trim().toUpperCase();
+const logMatch = findClientByRef(normRef); // may be null if not found
+const refStatus = logMatch ? 'MATCHED' : 'NO_MATCH';
+
 const payload = {
-referenceId: String(referenceId).trim().toUpperCase(),
+referenceId: normRef,
 clientName: clientName || '',
 clientEmail: clientEmail || '',
 clientPhone: clientPhone || '',
@@ -554,7 +692,12 @@ fullSSN: fullSSN || '',
 last4: last4 || '',
 language: language || 'en',
 service: service || 'Tax Preparation — $150 Flat',
-source: source || 'SSN Form'
+source: source || 'SSN Form',
+// extra fields for your Sheet to help you reconcile
+refStatus,
+logName: logMatch?.name || '',
+logEmail: logMatch?.email || '',
+logPhone: logMatch?.phone || ''
 };
 
 // Use global fetch (Node 18+). If your Node is older, install node-fetch.
@@ -571,7 +714,9 @@ throw new Error(sheetJson.error || 'Sheet call failed');
 
 return res.json({
 ok: true,
-message: 'Private information logged securely.'
+message: logMatch
+? 'Private information logged securely.'
+: 'Private information received. Reference ID could not be auto-verified; our team will double-check it.'
 });
 } catch (err) {
 console.error('private-info error:', err.message || err);
@@ -757,99 +902,6 @@ console.log(`📧 Status email sent to ${client.email} for ref ${ref}`);
 console.error('sendStatusEmail failed:', e);
 }
 }
-
-/* ------------------ Customer: check progress (GET) ------------------------ */
-// GET /api/progress?ref=TL123...
-app.get('/api/progress', (req, res) => {
-const ref = (req.query.ref || '').trim().toUpperCase();
-if (!ref) return res.status(400).json({ ok: false, error: 'Missing ref' });
-const db = readProgress();
-const row = db[ref];
-if (!row) return res.json({ ok: true, ref, found: false });
-res.json({
-ok: true,
-ref,
-found: true,
-status: row.stage,
-note: row.note || '',
-updatedAt: row.updatedAt
-});
-});
-
-/* --------------------- Admin: update progress (POST) ---------------------- */
-const STAGES = [
-// New UI stages
-'Received',
-'In Progress',
-'Awaiting Documents',
-'Completed',
-'E-Filed',
-'IRS Accepted',
-// Keep compatibility with older UI
-'In Review',
-'Pending Docs',
-'50% Complete',
-'Ready to File',
-'Filed',
-'Accepted',
-'Rejected'
-];
-
-function handleAdminUpdate(req, res) {
-try {
-const token = readAdminToken(req);
-if (!token || token !== (process.env.ADMIN_TOKEN || '').trim()) {
-return res.status(401).json({ ok: false, error: 'Unauthorized' });
-}
-const { ref, stage, note } = req.body || {};
-if (!ref || !stage)
-return res
-.status(400)
-.json({ ok: false, error: 'Missing ref or stage' });
-if (!STAGES.includes(stage))
-return res.status(400).json({ ok: false, error: 'Invalid stage' });
-
-const key = String(ref).trim().toUpperCase();
-const db = readProgress();
-db[key] = {
-stage,
-note: note || '',
-updatedAt: new Date().toISOString()
-};
-
-if (!writeProgress(db)) {
-return res.status(500).json({ ok: false, error: 'Failed to persist' });
-}
-
-// Fire-and-forget: send status update email (if email exists for this ref)
-sendStatusEmail(key, db[key].stage, db[key].note).catch(() => {});
-
-return res.json({
-ok: true,
-ref: key,
-stage: db[key].stage,
-updatedAt: db[key].updatedAt
-});
-} catch (e) {
-console.error('admin update error:', e);
-return res.status(500).json({ ok: false, error: 'Server error' });
-}
-}
-app.post('/api/admin/progress', handleAdminUpdate); // legacy path
-app.post('/api/admin/update', handleAdminUpdate); // path used by your embed
-
-/* -------- Optional: debug endpoint to read progress (token required) ------ */
-// GET /api/admin/progress?ref=TL123...&token=...
-app.get('/api/admin/progress', (req, res) => {
-const token = readAdminToken(req);
-if (!token || token !== (process.env.ADMIN_TOKEN || '').trim()) {
-return res.status(401).json({ ok: false, error: 'Unauthorized' });
-}
-const ref = (req.query.ref || '').trim().toUpperCase();
-const db = readProgress();
-if (ref) return res.json({ ok: true, ref, row: db[ref] || null });
-res.json({ ok: true, all: db });
-});
 
 /* ----------------------------- Start server ------------------------------ */
 const PORT = process.env.PORT || 3000;
