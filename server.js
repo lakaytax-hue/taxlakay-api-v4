@@ -170,6 +170,29 @@ const PUBLIC_DIR = path.join(__dirname, 'public');
 if (!fs.existsSync(PUBLIC_DIR)) fs.mkdirSync(PUBLIC_DIR, { recursive: true });
 app.use(express.static(PUBLIC_DIR)); // serve logo.png, logs, etc.
 
+/* ------------------------- Email template loader -------------------------- */
+const EMAIL_DIR = path.join(__dirname, 'emails');
+
+function loadTemplateForLang(lang) {
+const map = {
+en: 'eng.html',
+es: 'es.html',
+ht: 'ht.html'
+};
+const file = map[lang] || map.en;
+try {
+const filePath = path.join(EMAIL_DIR, file);
+if (!fs.existsSync(filePath)) {
+console.warn(`⚠️ Email template not found: ${filePath}`);
+return null;
+}
+return fs.readFileSync(filePath, 'utf8');
+} catch (e) {
+console.error('❌ Failed to load email template:', e);
+return null;
+}
+}
+
 /* ------------------------------ CSV Log ---------------------------------- */
 const LOG_FILE = path.join(PUBLIC_DIR, 'uploads_log.csv');
 
@@ -261,8 +284,13 @@ clientPhone,
 returnType,
 dependents,
 clientMessage,
-SEND_CLIENT_RECEIPT
+SEND_CLIENT_RECEIPT,
+clientLanguage
 } = req.body;
+
+const lang = ['en', 'es', 'ht'].includes((clientLanguage || '').toLowerCase())
+? clientLanguage.toLowerCase()
+: 'en';
 
 const sendClientReceipt = SEND_CLIENT_RECEIPT !== 'false';
 
@@ -290,7 +318,7 @@ const transporter = createTransporter();
 
 // 1) Email to YOU (admin)
 const adminEmail = {
-from: process.env.Email_USER || process.env.EMAIL_USER || 'lakaytax@gmail.com',
+from: process.env.EMAIL_USER || 'lakaytax@gmail.com',
 to: 'lakaytax@gmail.com',
 replyTo: clientEmail || undefined,
 subject: `📋 New Tax Document Upload - ${clientName || 'Customer'}`,
@@ -347,21 +375,23 @@ contentType: file.mimetype
 }))
 };
 
-// 2) Email to CLIENT
+// 2) Email to CLIENT (multi-language via templates)
 let clientEmailSent = false;
 if (clientEmail) {
 const clientSubject = "We've Received Your Documents — Tax Lakay";
 
+// Plain text fallback (English)
 const clientEmailText = `
 Hi ${clientName || 'Valued Customer'},
 
 Thank you so much for choosing Tax Lakay! 🎉
-We've received your documents and will start preparing your tax return within the next hour.
+We've received your documents and will start preparing your tax return shortly.
 If we need any additional information, we'll reach out right away.
 
 Your reference number is ${referenceNumber}.
 
-You can check your filing status anytime using your Reference ID.
+You can check your filing status anytime using your Reference ID at:
+https://www.taxlakay.com/filing-status
 
 Warm regards,
 The Tax Lakay Team
@@ -370,7 +400,22 @@ The Tax Lakay Team
 💻 https://www.taxlakay.com
 `.trim();
 
-const clientEmailHTML = `
+// HTML using templates for EN / ES / HT
+let clientEmailHTML = null;
+try {
+const tpl = loadTemplateForLang(lang);
+if (tpl) {
+clientEmailHTML = tpl
+.replace(/{{client_name}}/g, clientName || 'Valued Customer')
+.replace(/{{ref_number}}/g, referenceNumber);
+}
+} catch (e) {
+console.error('❌ Error applying email template:', e);
+}
+
+// If template missing or error → fallback to inline English HTML
+if (!clientEmailHTML) {
+clientEmailHTML = `
 <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; line-height: 1.6;">
 <div style="text-align: center; margin-bottom: 20px;">
 <h2 style="color: #1e63ff; margin-bottom: 5px;">We've Received Your Documents</h2>
@@ -380,13 +425,19 @@ const clientEmailHTML = `
 <div style="background: #f0f9ff; padding: 20px; border-radius: 10px; margin: 15px 0;">
 <p><strong>Hi ${clientName || 'Valued Customer'},</strong></p>
 <p>Thank you so much for choosing Tax Lakay! 🎉</p>
-<p>We've received your documents and will start preparing your tax return within the next hour.<br>
+<p>We've received your documents and will start preparing your tax return shortly.<br>
 If we need any additional information, we'll reach out right away.</p>
+
 <div style="background: #ffffff; padding: 15px; border-radius: 8px; border-left: 4px solid #1e63ff; margin: 15px 0;">
 <p style="margin: 0; font-weight: bold;">Your reference number is:
 <span style="color: #1e63ff;">${referenceNumber}</span></p>
 </div>
-<p>You can check your filing status anytime using your Reference ID.</p>
+
+<p>You can check your filing status anytime using your Reference ID at
+<a href="https://www.taxlakay.com/filing-status" style="color:#1e63ff;">
+https://www.taxlakay.com/filing-status
+</a>.
+</p>
 </div>
 
 <div style="text-align: center; margin-top: 25px; padding-top: 20px; border-top: 1px solid #e5e7eb;">
@@ -399,6 +450,7 @@ If we need any additional information, we'll reach out right away.</p>
 </div>
 </div>
 `.trim();
+}
 
 const clientEmailOptions = {
 from: process.env.EMAIL_USER || 'lakaytax@gmail.com',
@@ -472,7 +524,7 @@ writeProgress(db);
 console.error('progress init failed:', e);
 }
 
-// Response to frontend (UNCHANGED)
+// Response to frontend (FAST)
 res.json({
 ok: true,
 message: 'Files uploaded successfully! Confirmation email sent.',
@@ -837,7 +889,10 @@ Your filing status has been updated to: ${safeStage}
 Reference ID: ${ref}
 ${note ? `\nNote from preparer: ${note}\n` : ''}
 
-You can always check your current status online using your Reference ID.
+You will also receive automatic email updates as your return moves through each stage.
+You can check your current status online at:
+https://www.taxlakay.com/filing-status
+(Use your unique Reference ID: ${ref})
 
 If you have any questions, you can reply to this email or call us at (317) 935-9067.
 
@@ -871,11 +926,26 @@ note
 </div>
 
 <p style="font-size:14px;">
-You can always check your current status online using your Reference ID.
+You will also receive <strong>automatic email updates</strong> as your return moves through each filing stage.
 </p>
 
 <p style="font-size:14px;">
-If you have any questions, you can reply to this email or call us at <strong>(317) 935-9067</strong>.
+At any time, you can check your current status online using your
+unique Reference ID on our secure tracking page:
+</p>
+
+<p style="font-size:14px;">
+🔗 <a href="https://www.taxlakay.com/filing-status" style="color:#1e63ff;font-weight:bold;">
+https://www.taxlakay.com/filing-status
+</a><br>
+<span style="font-size:13px;color:#4b5563;">
+(Enter your Reference ID: <span style="font-family:monospace;">${ref}</span>)
+</span>
+</p>
+
+<p style="font-size:14px;">
+If you have any questions, you can reply to this email or call us at
+<strong>(317) 935-9067</strong>.
 </p>
 
 <hr style="border:none;border-top:1px solid #e5e7eb;margin:18px 0;">
@@ -902,6 +972,99 @@ console.log(`📧 Status email sent to ${client.email} for ref ${ref}`);
 console.error('sendStatusEmail failed:', e);
 }
 }
+
+/* ------------------ Customer: check progress (GET) ------------------------ */
+// GET /api/progress?ref=TL123...
+app.get('/api/progress', (req, res) => {
+const ref = (req.query.ref || '').trim().toUpperCase();
+if (!ref) return res.status(400).json({ ok: false, error: 'Missing ref' });
+const db = readProgress();
+const row = db[ref];
+if (!row) return res.json({ ok: true, ref, found: false });
+res.json({
+ok: true,
+ref,
+found: true,
+status: row.stage,
+note: row.note || '',
+updatedAt: row.updatedAt
+});
+});
+
+/* --------------------- Admin: update progress (POST) ---------------------- */
+const STAGES = [
+// New UI stages
+'Received',
+'In Progress',
+'Awaiting Documents',
+'Completed',
+'E-Filed',
+'IRS Accepted',
+// Keep compatibility with older UI
+'In Review',
+'Pending Docs',
+'50% Complete',
+'Ready to File',
+'Filed',
+'Accepted',
+'Rejected'
+];
+
+function handleAdminUpdate(req, res) {
+try {
+const token = readAdminToken(req);
+if (!token || token !== (process.env.ADMIN_TOKEN || '').trim()) {
+return res.status(401).json({ ok: false, error: 'Unauthorized' });
+}
+const { ref, stage, note } = req.body || {};
+if (!ref || !stage)
+return res
+.status(400)
+.json({ ok: false, error: 'Missing ref or stage' });
+if (!STAGES.includes(stage))
+return res.status(400).json({ ok: false, error: 'Invalid stage' });
+
+const key = String(ref).trim().toUpperCase();
+const db = readProgress();
+db[key] = {
+stage,
+note: note || '',
+updatedAt: new Date().toISOString()
+};
+
+if (!writeProgress(db)) {
+return res.status(500).json({ ok: false, error: 'Failed to persist' });
+}
+
+// Fire-and-forget: send status update email (if email exists for this ref)
+sendStatusEmail(key, db[key].stage, db[key].note).catch(() => {});
+
+return res.json({
+ok: true,
+ref: key,
+stage: db[key].stage,
+updatedAt: db[key].updatedAt
+});
+} catch (e) {
+console.error('admin update error:', e);
+return res.status(500).json({ ok: false, error: 'Server error' });
+}
+}
+app.post('/api/admin/progress', handleAdminUpdate); // legacy path
+app.post('/api/admin/update', handleAdminUpdate); // path used by your embed
+
+/* -------- Optional: debug endpoint to read progress (token required) ------ */
+// GET /api/admin/progress?ref=TL123...&token=...
+app.get('/api/admin/progress', (req, res) => {
+const token = readAdminToken(req);
+if (!token || token !== (process.env.ADMIN_TOKEN || '').trim()) {
+return res.status(401).json({ ok: false, error: 'Unauthorized' });
+}
+const ref = (req.query.ref || '').trim().toUpperCase();
+const db = readProgress();
+if (ref) return res.json({ ok: true, ref, row: db[ref] || null });
+res.json({ ok: true, all: db });
+});
 
 /* ----------------------------- Start server ------------------------------ */
 const PORT = process.env.PORT || 3000;
