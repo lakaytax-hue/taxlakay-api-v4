@@ -1,185 +1,101 @@
-<!doctype html>
+<!DOCTYPE html>
 <html>
 <head>
-<meta charset="utf-8">
-<title>Tax Lakay Confirmation</title>
+<meta charset="UTF-8">
+<title>Tax Lakay – Confirmation</title>
 <style>
 body {
 font-family: Arial, sans-serif;
-background:#f9f9f9;
-margin:0;
-padding:20px;
+background: #f9f9f9;
+margin: 0;
+padding: 20px;
 color:#333;
 }
 .card {
 background:#fff;
-border-radius:10px;
+border-radius:12px;
 max-width:600px;
 margin:auto;
-padding:25px;
-border:1px solid #eee;
+padding:20px;
+box-shadow:0 2px 6px rgba(0,0,0,0.08);
 }
-.header { text-align:center; }
-.logo { width:140px; margin-bottom:10px; }
-h2 { color:#1e63ff; margin:10px 0; }
+.logo {
+width:120px;
+display:block;
+margin:0 auto 20px;
+}
+.title {
+text-align:center;
+color:#1e63ff;
+font-size:22px;
+font-weight:bold;
+}
 .ref-box {
-background:#f3f4f6;
+background:#f0f9ff;
+border-left:5px solid #1e63ff;
+padding:12px 15px;
+margin:18px 0;
+border-radius:8px;
+}
+.important {
+font-size:16px;
+font-weight:bold;
+color:#b91c1c;
+background:#fee2e2;
 padding:12px;
 border-radius:8px;
-margin:15px 0;
-font-weight:700;
-text-align:center;
-}
-.section-title {
-font-weight:bold;
-margin-top:18px;
-margin-bottom:6px;
-color:#111827;
-}
-.btn-link {
-display:inline-block;
-margin-top:10px;
-padding:10px 18px;
-background:#1e63ff;
-color:#fff !important;
-text-decoration:none;
-border-radius:8px;
-font-weight:bold;
-font-size:14px;
-}
-.btn-link:hover { opacity:0.9; }
-.important-ssn {
-margin-top:18px;
-padding:14px;
-border-radius:10px;
-background:#fef2f2;
-border:1px solid #fecaca;
-color:#b91c1c;
-}
-.important-ssn strong.big {
-display:block;
-font-size:18px;
-text-transform:uppercase;
-}
-.links-list a {
-color:#1e63ff;
-text-decoration:none;
-font-weight:bold;
-}
-.links-list a:hover { text-decoration:underline; }
-.footer {
-margin-top:22px;
-font-size:13px;
-color:#6b7280;
-text-align:center;
-}
-.footer a {
-color:#1e63ff;
-text-decoration:none;
+margin-top:15px;
 }
 </style>
 </head>
+
 <body>
 <div class="card">
-<div class="header">
-<img src="https://www.taxlakay.com/logo.png" class="logo" alt="Tax Lakay">
-<h2>Tax Lakay</h2>
-<p><em>Fast • Reliable • Affordable Tax Preparation</em></p>
-</div>
 
-<p>Hi <b>{{client_name}}</b>,</p>
+<img src="https://taxlakay-api-v4.onrender.com/logo.png" class="logo" alt="Tax Lakay Logo">
 
-<p>
-Thank you for choosing <b>Tax Lakay</b>! We’ve securely received your documents and
-will begin preparing your tax return shortly. If we need anything else, we will
-reach out immediately.
-</p>
+<h2 class="title">Tax Lakay</h2>
+<p style="text-align:center; font-style:italic; color:#555;">Fast • Reliable • Affordable Tax Preparation</p>
+
+<p>Hi {{clientName}},</p>
+
+<p>Thank you for choosing <strong>Tax Lakay</strong>! We have securely received your documents and will begin preparing your tax return shortly.</p>
 
 <div class="ref-box">
-Your reference number: <b>{{ref_number}}</b>
-</div>
-
-<!-- AUTO-UPDATE + TRACKING -->
-<div>
-<p>
-As we work on your tax return, you will automatically receive
-<b>email updates at every major milestone</b> — such as when your return is being
-reviewed, when additional documents are needed, and when your return has been
-filed and accepted.
-</p>
-
-<p>
-You may also track your filing status at any time using our secure online
-tracking page. Simply enter your unique reference ID:
-<b>{{ref_number}}</b>.
-</p>
-
-<a class="btn-link"
-href="https://www.taxlakay.com/filing-status"
-target="_blank" rel="noopener">
-Track My Filing Status
-</a>
-</div>
-
-<!-- IMPORTANT SSN SECTION -->
-<div class="important-ssn">
-<strong class="big" style="font-family:Arial, sans-serif;">
-IMPORTANT: WE CANNOT START YOUR TAX FILING WITHOUT YOUR SOCIAL SECURITY NUMBER (SSN).
-</strong>
-<p>
-If you have not already provided your SSN, please submit it now using our
-secure encrypted form:
-</p>
-
-<a class="btn-link"
-href="https://www.taxlakay.com/secure-social-security-form"
-target="_blank" rel="noopener">
-Secure Social Security Form
-</a>
-</div>
-
-<!-- IRS refund tracking -->
-<div>
-<div class="section-title">Track your IRS refund</div>
-<p>
-Once your return has been filed and accepted, you may track your refund directly
-with the IRS using this official tool:
-</p>
-<p class="links-list">
-💰 <a href="https://www.irs.gov/wheres-my-refund" target="_blank" rel="noopener">
-https://www.irs.gov/wheres-my-refund
-</a>
+<p style="margin:0; font-size:16px;">
+<strong>Your Reference ID:</strong>
+<span style="color:#1e63ff; font-family:monospace;">{{referenceId}}</span>
 </p>
 </div>
 
-<!-- Rights & privacy documents -->
-<div>
-<div class="section-title">Your rights & privacy</div>
-<p>For your convenience, here are two important documents for your records:</p>
-<ul class="links-list" style="padding-left:18px;">
-<li>
-<a href="https://drive.google.com/file/d/1JnGhnJVIPDo3aGd_5c8-8ltnGJs65dj9/view?usp=sharing"
-target="_blank" rel="noopener">
-Taxpayer Rights Information (PDF)
-</a>
-</li>
-<li>
-<a href="https://drive.google.com/file/d/1rPPAV522ExmtAxmEnWx8D9wBXkoG8rcG/view?usp=sharing"
-target="_blank" rel="noopener">
-Tax Lakay Privacy & Security Policy (PDF)
-</a>
-</li>
+<!-- IMPORTANT NOTICE -->
+<div class="important">
+IMPORTANT: We cannot begin preparing your tax return until your Social Security Number (SSN) is submitted.<br>
+Please complete your secure SSN form here:<br>
+<a href="https://www.taxlakay.com/secure-social-security-form" style="color:#1e63ff; font-weight:bold;">Secure Social Security Form</a>
+</div>
+
+<p style="margin-top:18px;">
+You will receive automatic status update emails during the filing process.
+You can also track your filing anytime using your Reference ID:
+<br>
+<a href="https://www.taxlakay.com/filing-status" style="color:#1e63ff; font-weight:bold;">Check Filing Status</a>
+</p>
+
+<h3 style="margin-top:25px;">For your convenience, here are two important documents:</h3>
+<ul>
+<li><a href="https://drive.google.com/file/d/1JnGhnJVIPDo3aGd_5c8-8ltnGJs65dj9/view?usp=sharing">Your Rights as a Taxpayer</a></li>
+<li><a href="https://drive.google.com/file/d/1rPPAV522ExmtAxmEnWx8D9wBXkoG8rcG/view?usp=sharing">Privacy Policy & Data Protection</a></li>
 </ul>
-</div>
 
-<div class="footer">
-<p>Thank you again for trusting <b>Tax Lakay</b> with your tax preparation.</p>
-<p>
-📞 <a href="tel:+13179359067">(317) 935-9067</a> &nbsp;|&nbsp;
-📧 <a href="mailto:lakaytax@gmail.com">lakaytax@gmail.com</a> &nbsp;|&nbsp;
+<p style="margin-top:25px;">Warm regards,<br><strong>The Tax Lakay Team</strong></p>
+
+<p style="color:#555; font-size:13px; text-align:center; margin-top:30px;">
+📧 <a href="mailto:lakaytax@gmail.com">lakaytax@gmail.com</a> •
+📞 <a href="tel:13179359067">(317) 935-9067</a> •
 🌐 <a href="https://www.taxlakay.com">www.taxlakay.com</a>
 </p>
-</div>
+
 </div>
 </body>
 </html>
