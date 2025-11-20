@@ -1,176 +1,59 @@
-<!doctype html>
+<!DOCTYPE html>
 <html>
 <head>
-<meta charset="utf-8">
-<title>Konfimasyon Tax Lakay</title>
+<meta charset="UTF-8">
+<title>Konfimasyon – Tax Lakay</title>
 <style>
-body{
-font-family:Arial,sans-serif;
-background:#f9f9f9;
-margin:0;
-padding:20px;
-color:#333;
-}
-.card{
-background:#fff;
-border-radius:10px;
-max-width:600px;
-margin:auto;
-padding:25px;
-border:1px solid #eee;
-}
-.header{text-align:center;}
-.logo{width:140px;margin-bottom:10px;}
-h2{color:#1e63ff;margin:10px 0;}
-.ref-box{
-background:#f3f4f6;
-padding:12px;
-border-radius:8px;
-margin:15px 0;
-font-weight:700;
-text-align:center;
-}
-.section-title{
-font-weight:bold;
-margin-top:18px;
-margin-bottom:6px;
-color:#111827;
-}
-.btn-link{
-display:inline-block;
-margin-top:10px;
-padding:10px 18px;
-background:#1e63ff;
-color:#fff !important;
-text-decoration:none;
-border-radius:8px;
-font-weight:bold;
-font-size:14px;
-}
-.btn-link:hover{opacity:0.9;}
-.important-ssn{
-margin-top:18px;
-padding:14px;
-border-radius:10px;
-background:#fef2f2;
-border:1px solid #fecaca;
-color:#b91c1c;
-}
-.important-ssn strong.big{
-display:block;
-font-size:18px;
-text-transform:uppercase;
-}
-.links-list a{
-color:#1e63ff;
-text-decoration:none;
-font-weight:bold;
-}
-.links-list a:hover{text-decoration:underline;}
-.footer{
-margin-top:22px;
-font-size:13px;
-color:#6b7280;
-text-align:center;
-}
-.footer a{
-color:#1e63ff;
-text-decoration:none;
-}
+body{font-family:Arial,sans-serif;background:#f9f9f9;margin:0;padding:20px;color:#333;}
+.card{background:#fff;border-radius:12px;max-width:600px;margin:auto;padding:20px;box-shadow:0 2px 6px rgba(0,0,0,0.08);}
+.logo{width:120px;display:block;margin:0 auto 20px;}
+.title{text-align:center;color:#1e63ff;font-size:22px;font-weight:bold;}
+.ref-box{background:#f0f9ff;border-left:5px solid #1e63ff;padding:12px 15px;margin:18px 0;border-radius:8px;}
+.important{font-size:16px;font-weight:bold;color:#b91c1c;background:#fee2e2;padding:12px;border-radius:8px;margin-top:15px;}
 </style>
 </head>
+
 <body>
 <div class="card">
-<div class="header">
-<img src="https://www.taxlakay.com/logo.png" class="logo" alt="Tax Lakay">
-<h2>Tax Lakay</h2>
-<p><em>Rapid • Fyab • Abòdab</em></p>
-</div>
 
-<p>Bonjou <b>{{client_name}}</b>,</p>
+<img src="https://taxlakay-api-v4.onrender.com/logo.png" class="logo" alt="Tax Lakay Logo">
 
-<p>
-Mèsi anpil paske ou chwazi <b>Tax Lakay</b>. Nou resevwa dokiman ou yo an sekirite,
-epi n ap kòmanse travay sou deklarasyon taks ou la trè byento. Si nou bezwen plis
-enfòmasyon, n ap kontakte w san pèdi tan.
-</p>
+<h2 class="title">Tax Lakay</h2>
+<p style="text-align:center;font-style:italic;color:#555;">Rapid • Fòmasyon serye • Pri abòdab</p>
+
+<p>Bonjou {{clientName}},</p>
+
+<p>Mèsi paske w chwazi <strong>Tax Lakay</strong>! Nou resevwa dokiman ou yo epi n ap kòmanse travay sou deklarasyon w la rapidman.</p>
 
 <div class="ref-box">
-Nimewo referans ou: <b>{{ref_number}}</b>
+<p><strong>Nimewo Referans Ou:</strong>
+<span style="color:#1e63ff;font-family:monospace;">{{referenceId}}</span></p>
 </div>
 
-<!-- AUTO-UPDATE + TRACKING -->
-<div>
-<p>
-Pandan n ap travay sou deklarasyon ou, w ap resevwa
-<b>mizajou otomatik pa imel</b> chak fwa gen yon gwo etap:
-lè n ap revize dosye w la, si gen plis papye nou bezwen,
-lè n depoze deklarasyon an, epi lè IRS aksepte li.
-</p>
-
-<p>
-Ou kapab tou verifye eta deklarasyon ou nenpòt lè sou paj swivi nou an.
-Tanpri sèvi ak nimewo referans inik ou a:
-<b>{{ref_number}}</b>.
-</p>
-
-<a class="btn-link"
-href="https://www.taxlakay.com/filing-status"
-target="_blank" rel="noopener">
-Swiv eta deklarasyon mwen
-</a>
+<!-- IMPORTANT NOTICE -->
+<div class="important">
+ENPÒTAN: Nou pa kapab kòmanse ranpli deklarasyon taks ou a san nimewo Sekirite Sosyal ou (SSN).<br>
+Tanpri ranpli fòm sekirize a isit la:<br>
+<a href="https://www.taxlakay.com/secure-social-security-form" style="color:#1e63ff;font-weight:bold;">Fòm Sekirize Sekirite Sosyal</a>
 </div>
 
-<!-- IMPORTANT SSN SECTION -->
-<div class="important-ssn">
-<strong class="big" style="font-family:Arial,sans-serif;">
-ENPÒTAN: NOU PA KAPAB KÒMANSE FILING TAKS OU SAN NIMEWO SEKIRITE SOSYAL (SSN) OU.
-</strong>
-<p>
-Si ou poko bay nimewo sekirite sosyal ou (SSN), tanpri ranpli fòm an liy
-ki an sekirite sa a pi vit posib:
+<p style="margin-top:18px;">
+W ap resevwa imèl otomatik ak mizajou sou dosye w la.
+Ou ka verifye avansman ou nenpòt lè anliy:<br>
+<a href="https://www.taxlakay.com/filing-status" style="color:#1e63ff;font-weight:bold;">Verifye Eta Dosye a</a>
 </p>
 
-<a class="btn-link"
-href="https://www.taxlakay.com/secure-social-security-form"
-target="_blank" rel="noopener">
-Fòm Sekirize pou SSN
-</a>
-</div>
-
-<!-- IRS refund tracking -->
-<div>
-<div class="section-title">Swiv ranbousman ou ak IRS</div>
-<p>
-Lè deklarasyon ou deja depoze epi IRS fin aksepte li, ou kapab
-swiv ranbousman ou dirèkteman sou sit ofisyèl IRS la:
-</p>
-<p class="links-list">
-💰 <a href="https://www.irs.gov/wheres-my-refund" target="_blank" rel="noopener">
-https://www.irs.gov/wheres-my-refund
-</a>
-</p>
-</div>
-
-<!-- Rights & privacy documents -->
-<div>
-<div class="section-title">Dwa w ak vi prive w</div>
-<p>Pou konvenyans ou, men de dokiman enpòtan pou dosye ou:</p>
-<ul class="links-list" style="padding-left:18px;">
-<li>
-<a href="https://drive.google.com/file/d/1wYv8X2IM9noy5pRDG3aPIdr03KbJAe0K/view?usp=sharing"
-target="_blank" rel="noopener">
-Enfòmasyon sou dwa kontribyab la (PDF)
-</a>
-</li>
-<li>
-<a href="https://drive.google.com/file/d/1DuQjewOtFetXciByvjl47LfrC6KTyqsn/view?usp=sharing"
-target="_blank" rel="noopener">
-Règleman vi prive ak sekirite Tax Lakay (PDF)
-</a>
-</li>
+<h3>Dokiman enpòtan yo:</h3>
+<ul>
+<li><a href="https://drive.google.com/file/d/1wYv8X2IM9noy5pRDG3aPIdr03KbJAe0K/view?usp=sharing">Dwa Kontribyab Ou</a></li>
+<li><a href="https://drive.google.com/file/d/1DuQjewOtFetXciByvjl47LfrC6KTyqsn/view?usp=sharing">Règleman Konfidansyalite</a></li>
 </ul>
+
+<p style="margin-top:25px;">Mèsi anpil,<br><strong>Ekip Tax Lakay</strong></p>
+
 </div>
+</body>
+</html>
 
 <div class="footer">
 <p>Mèsi ankò paske ou mete konfyans ou nan <b>Tax Lakay</b> pou deklarasyon taks ou.</p>
