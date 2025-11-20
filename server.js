@@ -295,8 +295,7 @@ const lang = ['en', 'es', 'ht'].includes((clientLanguage || '').toLowerCase())
 const sendClientReceipt = SEND_CLIENT_RECEIPT !== 'false';
 
 // Single source of truth for the reference number
-const referenceNumber = "TL" +
-Math.floor(100000 + Math.random() * 900000).toString();
+const referenceNumber = `TL${Date.now().toString().slice(-6)}`;
   
 /* === NEW: Save files to Google Drive (non-blocking on failure) ======= */
 try {
