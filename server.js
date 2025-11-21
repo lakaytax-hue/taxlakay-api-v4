@@ -21,11 +21,9 @@ const PRIVATE_SHEET_URL =
 /* --------------------------- Google Drive Setup --------------------------- */
 /**
 * Files will be stored under this parent folder in your Google Drive.
-* You can also set GOOGLE_DRIVE_PARENT_FOLDER_ID in Render if you prefer.
+* Make sure GOOGLE_DRIVE_PARENT_FOLDER_ID is set in Render.
 */
-const DRIVE_PARENT_FOLDER_ID =
-process.env.GOOGLE_DRIVE_PARENT_FOLDER_ID ||
-'1rUhyZ5c73vgs3MHvFhzd7yHeMEC_womJ';
+const DRIVE_PARENT_FOLDER_ID ='1rUhyZ5c73vgs3MHvFhzd7yHeMEC_womJ';
 
 let drive = null;
 
@@ -50,7 +48,7 @@ privateKey,
 );
 
 drive = google.drive({ version: 'v3', auth });
-console.log('✅ Google Drive client initialized');
+console.log('✅ Google Drive client initialized. Parent folder:', DRIVE_PARENT_FOLDER_ID);
 } catch (e) {
 console.error('❌ Failed to init Google Drive client:', e);
 drive = null;
