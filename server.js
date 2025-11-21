@@ -23,7 +23,7 @@ const PRIVATE_SHEET_URL =
 * Files will be stored under this parent folder in your Google Drive.
 * Make sure GOOGLE_DRIVE_PARENT_FOLDER_ID is set in Render.
 */
-const DRIVE_PARENT_FOLDER_ID ='1rUhyZ5c73vgs3MHvFhzd7yHeMEC_womJ';
+const DRIVE_PARENT_FOLDER_ID ='16tx8uhyrq79K481-2Ey1SZz-ScRb5EJh';
 
 let drive = null;
 
