@@ -20,14 +20,12 @@ const PRIVATE_SHEET_URL =
 
 /* --------------------------- Google Drive Setup --------------------------- */
 /**
-* Files will be stored under this parent folder in your Google Drive:
-* Tax Lakay – Client Uploads
-* Folder URL looked like:
-* https://drive.google.com/drive/folders/1Uhy2L5c73vgs3MlvFHzd7yHeMEC_womJ
+* Files will be stored under this parent folder in your Google Drive.
+* You can also set GOOGLE_DRIVE_PARENT_FOLDER_ID in Render if you prefer.
 */
 const DRIVE_PARENT_FOLDER_ID =
 process.env.GOOGLE_DRIVE_PARENT_FOLDER_ID ||
-'1Uhy2L5c73vgs3MlvFHzd7yHeMEC_womJ';
+'1lsRjBQCq40a0FiuJSLrMA7QJRa2qDOj5F083upWAB';
 
 let drive = null;
 
@@ -41,6 +39,7 @@ console.warn('⚠️ Google Drive not fully configured. Skipping Drive uploads.'
 return;
 }
 
+// Render usually stores the key with \n, convert to real newlines
 const privateKey = rawKey.replace(/\\n/g, '\n');
 
 const auth = new google.auth.JWT(
@@ -61,6 +60,7 @@ drive = null;
 /* Small helpers for Drive names */
 function sanitizeName(str) {
 if (!str) return '';
+// Remove characters not allowed in Drive / common file systems
 return String(str).replace(/[<>:"/\\|?*]+/g, '').trim();
 }
 
@@ -75,6 +75,7 @@ let folderName = `${safeRef} - ${safeName}`;
 if (safePhone) folderName += ` - ${safePhone}`;
 
 try {
+// Try to find existing folder with same name under parent
 const listRes = await drive.files.list({
 q: `'${DRIVE_PARENT_FOLDER_ID}' in parents and mimeType = 'application/vnd.google-apps.folder' and name = '${folderName.replace(/'/g, "\\'")}' and trashed = false`,
 fields: 'files(id, name)',
@@ -85,6 +86,7 @@ if (listRes.data.files && listRes.data.files.length > 0) {
 return listRes.data.files[0].id;
 }
 
+// Create new folder
 const createRes = await drive.files.create({
 requestBody: {
 name: folderName,
