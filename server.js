@@ -5,23 +5,29 @@ const multer = require('multer');
 const cors = require('cors');
 const nodemailer = require('nodemailer');
 const PDFDocument = require('pdfkit');
-const { google } = require('googleapis'); // 👈 NEW
+const { google } = require('googleapis');
 const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args));
 const app = express();
 
-/* --------------------------- PRIVATE SHEET URL ---------------------------- */
-/** Web app URL from your Google Apps Script deployment (Private SSN logger) */
+/* --------------------------- GOOGLE APPS SCRIPTS -------------------------- */
+/** MAIN UPLOAD LOG (Tax Lakay - Upload Log) */
+const UPLOAD_SHEET_URL =
+'https://script.google.com/macros/s/AKfycbwvSQwRj_-ZFHCv94vm4Ve87WD5ZHhgqNevMcwi1Eweg36Gp3Wh8IFOm7BF97YIITUU/exec';
+
+/** PRIVATE SSN LOGGER (Social Security - Upload Log) */
 const PRIVATE_SHEET_URL =
 'https://script.google.com/macros/s/AKfycby-RtiBJGTPucvcm-HZEJtkL05mMcWSGaezfBcjA0IdLuGLpstSPbQiBQXW7hs8DsCkGA/exec';
 
 /* --------------------------- Google Drive Setup --------------------------- */
 /**
-* Files will be stored under this parent folder in your Google Drive.
-* You can also set GOOGLE_DRIVE_PARENT_FOLDER_ID in Render if you prefer.
+* Files will be stored under this parent folder in your Google Drive:
+* Tax Lakay – Client Uploads
+* Folder URL looked like:
+* https://drive.google.com/drive/folders/1Uhy2L5c73vgs3MlvFHzd7yHeMEC_womJ
 */
 const DRIVE_PARENT_FOLDER_ID =
 process.env.GOOGLE_DRIVE_PARENT_FOLDER_ID ||
-'1lsRjBQCq40a0FiuJSLrMA7QJRa2qDOj5F083upWAB';
+'1Uhy2L5c73vgs3MlvFHzd7yHeMEC_womJ';
 
 let drive = null;
 
@@ -35,7 +41,6 @@ console.warn('⚠️ Google Drive not fully configured. Skipping Drive uploads.'
 return;
 }
 
-// Render usually stores the key with \n, convert to real newlines
 const privateKey = rawKey.replace(/\\n/g, '\n');
 
 const auth = new google.auth.JWT(
@@ -56,7 +61,6 @@ drive = null;
 /* Small helpers for Drive names */
 function sanitizeName(str) {
 if (!str) return '';
-// Remove characters not allowed in Drive / common file systems
 return String(str).replace(/[<>:"/\\|?*]+/g, '').trim();
 }
 
@@ -71,7 +75,6 @@ let folderName = `${safeRef} - ${safeName}`;
 if (safePhone) folderName += ` - ${safePhone}`;
 
 try {
-// Try to find existing folder with same name under parent
 const listRes = await drive.files.list({
 q: `'${DRIVE_PARENT_FOLDER_ID}' in parents and mimeType = 'application/vnd.google-apps.folder' and name = '${folderName.replace(/'/g, "\\'")}' and trashed = false`,
 fields: 'files(id, name)',
@@ -82,7 +85,6 @@ if (listRes.data.files && listRes.data.files.length > 0) {
 return listRes.data.files[0].id;
 }
 
-// Create new folder
 const createRes = await drive.files.create({
 requestBody: {
 name: folderName,
@@ -133,16 +135,15 @@ console.error('❌ Failed to upload file to Drive:', e);
 const ALLOWED_HOSTS = new Set([
 'www.taxlakay.com',
 'taxlakay.com',
-'sites.google.com' // editor & viewer
+'sites.google.com'
 ]);
 
 function isAllowedOrigin(origin) {
-if (!origin) return true; // server-to-server, curl, health checks
+if (!origin) return true;
 try {
 const u = new URL(origin);
 if (u.protocol !== 'https:') return false;
 if (ALLOWED_HOSTS.has(u.host)) return true;
-// Google Sites iframes are served from *.googleusercontent.com
 if (/\.googleusercontent\.com$/i.test(u.host)) return true;
 return false;
 } catch {
@@ -168,7 +169,7 @@ app.use(express.urlencoded({ extended: true }));
 /* --------------------------- Public / Static ------------------------------ */
 const PUBLIC_DIR = path.join(__dirname, 'public');
 if (!fs.existsSync(PUBLIC_DIR)) fs.mkdirSync(PUBLIC_DIR, { recursive: true });
-app.use(express.static(PUBLIC_DIR)); // serve logo.png, logs, etc.
+app.use(express.static(PUBLIC_DIR));
 
 /* ------------------------- Email template loader -------------------------- */
 const EMAIL_DIR = path.join(__dirname, 'emails');
@@ -225,18 +226,17 @@ ensureLogHeader();
 const upload = multer({
 storage: multer.memoryStorage(),
 limits: {
-fileSize: 20 * 1024 * 1024, // 20MB
+fileSize: 20 * 1024 * 1024,
 files: 10
 }
 });
 
 /* ------------------------- Email transporter ------------------------------ */
 const createTransporter = () => {
-// Gmail (App Password recommended)
 return nodemailer.createTransport({
 service: 'gmail',
 auth: {
-user: process.env.EMAIL_USER || 'lakaytax@gmail.com',
+user: process.env.Email_USER || process.env.EMAIL_USER || 'lakaytax@gmail.com',
 pass: process.env.EMAIL_PASS
 }
 });
@@ -266,7 +266,6 @@ res.json({ ok });
 });
 
 /* ------------------------------ Upload API -------------------------------- */
-// Accept any file field name (handles "documents" or "files")
 app.post('/api/upload', upload.any(), async (req, res) => {
 try {
 console.log('📨 Upload request received');
@@ -294,10 +293,9 @@ const lang = ['en', 'es', 'ht'].includes((clientLanguage || '').toLowerCase())
 
 const sendClientReceipt = SEND_CLIENT_RECEIPT !== 'false';
 
-// Single source of truth for the reference number
 const referenceNumber = `TL${Date.now().toString().slice(-6)}`;
 
-/* === NEW: Save files to Google Drive (non-blocking on failure) ======= */
+/* === Google Drive upload (non-blocking on failure) ==================== */
 try {
 const folderId = await ensureClientFolder(referenceNumber, clientName, clientPhone);
 if (folderId) {
@@ -312,11 +310,43 @@ console.warn(`⚠️ No Drive folder created for ref ${referenceNumber}`);
 } catch (e) {
 console.error('❌ Drive upload block failed:', e);
 }
-/* ===================================================================== */
+
+/* === Upload Log → Apps Script (non-blocking) ========================= */
+try {
+const sheetPayload = {
+referenceId: referenceNumber,
+clientName: clientName || '',
+clientEmail: clientEmail || '',
+clientPhone: clientPhone || '',
+service: returnType || 'Tax Preparation — $150 Flat',
+returnType: returnType || '',
+dependents: dependents || '0',
+files: (req.files || []).map(f => f.originalname).join('; '),
+source: 'Main Upload Form',
+last4: '',
+private: 'No',
+language: lang
+};
+
+const r = await fetch(UPLOAD_SHEET_URL, {
+method: 'POST',
+headers: { 'Content-Type': 'application/json' },
+body: JSON.stringify(sheetPayload)
+});
+
+const j = await r.json().catch(() => ({}));
+if (!r.ok || (j && j.ok === false)) {
+console.error('❌ Upload Sheet logger error:', j && j.error);
+} else {
+console.log('✅ Row logged to Tax Lakay - Upload Log');
+}
+} catch (e) {
+console.error('❌ Failed calling Upload Sheet logger:', e);
+}
 
 const transporter = createTransporter();
 
-// 1) Email to YOU (admin)
+/* ---------------- Email to YOU (admin) ---------------- */
 const adminEmail = {
 from: process.env.EMAIL_USER || 'lakaytax@gmail.com',
 to: 'lakaytax@gmail.com',
@@ -349,7 +379,7 @@ ${clientMessage ? `<p><strong>Client Message:</strong> ${clientMessage}</p>` : '
 <ul>
 ${req.files
 .map(
-(file) =>
+file =>
 `<li>${file.originalname} (${(file.size / 1024 / 1024).toFixed(2)} MB)</li>`
 )
 .join('')}
@@ -368,19 +398,18 @@ Uploaded at: ${new Date().toLocaleString()}
 </p>
 </div>
 `.trim(),
-attachments: req.files.map((file) => ({
+attachments: req.files.map(file => ({
 filename: file.originalname,
 content: file.buffer,
 contentType: file.mimetype
 }))
 };
 
-// 2) Email to CLIENT (multi-language via templates)
+/* ---------------- Email to CLIENT (templates) ---------------- */
 let clientEmailSent = false;
 if (clientEmail) {
 const clientSubject = "We've Received Your Documents — Tax Lakay";
 
-// Plain text fallback (English)
 const clientEmailText = `
 Hi ${clientName || 'Valued Customer'},
 
@@ -400,7 +429,6 @@ The Tax Lakay Team
 💻 https://www.taxlakay.com
 `.trim();
 
-// HTML using templates for EN / ES / HT
 let clientEmailHTML = null;
 try {
 const tpl = loadTemplateForLang(lang);
@@ -413,7 +441,6 @@ clientEmailHTML = tpl
 console.error('❌ Error applying email template:', e);
 }
 
-// If template missing or error → fallback to inline English HTML
 if (!clientEmailHTML) {
 clientEmailHTML = `
 <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; line-height: 1.6;">
@@ -461,7 +488,7 @@ html: clientEmailHTML
 };
 
 if (sendClientReceipt) {
-clientEmailOptions.attachments = req.files.map((file) => ({
+clientEmailOptions.attachments = req.files.map(file => ({
 filename: file.originalname,
 content: file.buffer,
 contentType: file.mimetype
@@ -480,14 +507,13 @@ console.error('❌ Failed to send client email:', emailError);
 }
 }
 
-// Send admin email
 await transporter.sendMail(adminEmail);
 console.log('✅ Admin notification email sent to lakaytax@gmail.com');
 
-// --- CSV log append ---
+/* ------------- CSV log append ------------- */
 try {
 const ref = referenceNumber;
-const files = (req.files || []).map((f) => f.originalname);
+const files = (req.files || []).map(f => f.originalname);
 const row =
 [
 new Date().toISOString(),
@@ -503,14 +529,14 @@ files.join('; ')
 .map(csvEscape)
 .join(',') + '\n';
 
-fs.appendFile(LOG_FILE, row, (err) => {
+fs.appendFile(LOG_FILE, row, err => {
 if (err) console.error('CSV append error:', err);
 });
 } catch (e) {
 console.error('CSV logging failed:', e);
 }
 
-// --- Initialize progress for this reference in progress.json ---
+/* ------------- Initialize progress.json ------------- */
 try {
 const key = String(referenceNumber).trim().toUpperCase();
 const db = readProgress();
@@ -524,12 +550,11 @@ writeProgress(db);
 console.error('progress init failed:', e);
 }
 
-// Response to frontend (FAST)
 res.json({
 ok: true,
 message: 'Files uploaded successfully! Confirmation email sent.',
 filesReceived: req.files.length,
-clientEmailSent: clientEmailSent,
+clientEmailSent,
 ref: referenceNumber
 });
 } catch (error) {
@@ -539,6 +564,7 @@ res.status(500).json({ ok: false, error: 'Upload failed: ' + error.message });
 });
 
 /* --------------------- PDF route for Refund Estimator --------------------- */
+// (unchanged – keeping existing code)
 app.get('/api/estimator-pdf', (req, res) => {
 const {
 estimate = '—',
@@ -556,7 +582,6 @@ res.setHeader('Content-Disposition', `${disp}; filename="TaxLakay-Estimate.pdf"`
 const doc = new PDFDocument({ size: 'LETTER', margin: 50 });
 doc.pipe(res);
 
-// Header bar
 doc.rect(0, 0, doc.page.width, 60).fill('#1e63ff');
 doc.fillColor('white').fontSize(20).text('TAX LAKAY', 50, 20);
 doc.fillColor('white').fontSize(10).text('www.taxlakay.com', 420, 28, { align: 'right' });
@@ -567,13 +592,11 @@ doc.image(logoPath, doc.page.width - 120, 15, { width: 60 });
 }
 doc.moveDown(3);
 
-// Title
 doc.fillColor('#1e63ff').fontSize(18).text('Refund Estimate Summary', { align: 'left' });
 doc.moveDown(0.5);
 doc.fillColor('#111827').fontSize(12).text(`Date & Time: ${ts}`);
 doc.moveDown();
 
-// Summary
 doc.fontSize(14).fillColor('#111827').text(`Estimated Refund: ${estimate}`);
 doc.moveDown(0.5);
 doc
@@ -583,7 +606,6 @@ doc
 .text(`Other dependents: ${deps}`);
 doc.moveDown();
 
-// Footer / disclaimer
 doc
 .moveDown()
 .fontSize(10)
@@ -599,6 +621,7 @@ doc.end();
 });
 
 /* -------------------- Receipt PDF (Server-side) -------------------------- */
+// (keeping your previous receipt endpoint as-is)
 app.get('/api/receipt-pdf', (req, res) => {
 try {
 const {
@@ -618,16 +641,12 @@ minute: '2-digit'
 res.setHeader('Content-Type', 'application/pdf');
 res.setHeader(
 'Content-Disposition',
-`attachment; filename="TaxLakay_Receipt_${String(ref).replace(
-/[^A-Za-z0-9_-]/g,
-''
-)}.pdf"`
+`attachment; filename="TaxLakay_Receipt_${String(ref).replace(/[^A-Za-z0-9_-]/g, '')}.pdf"`
 );
 
 const doc = new PDFDocument({ size: 'LETTER', margin: 48 });
 doc.pipe(res);
 
-// Header with logo + title
 const logoPath = path.join(__dirname, 'public', 'logo.png');
 if (fs.existsSync(logoPath)) {
 doc.image(logoPath, 48, 36, { width: 80 });
@@ -635,12 +654,10 @@ doc.image(logoPath, 48, 36, { width: 80 });
 doc.fontSize(20).fillColor('#1e63ff').text('Tax Lakay — Upload Receipt', 140, 42);
 doc.moveDown(1.2);
 
-// Success badge
 doc.roundedRect(48, 90, 90, 24, 12).fill('#10b981');
 doc.fillColor('#ffffff').fontSize(12).text('SUCCESS', 63, 96);
 doc.fillColor('#111827');
 
-// Note box
 doc.moveDown(2);
 const note = `Files uploaded successfully! Confirmation email: ${emailOK}.`;
 doc.rect(48, 130, doc.page.width - 96, 40).fill('#f0f9ff');
@@ -650,7 +667,6 @@ doc
 .text(note, 56, 138, { width: doc.page.width - 112 });
 doc.fillColor('#111827');
 
-// Details table
 const rows = [
 ['Status', 'Completed'],
 ['Service', String(service)],
@@ -670,9 +686,8 @@ y += 22;
 });
 doc.moveTo(48, y).lineTo(doc.page.width - 48, y).strokeColor('#f1f5f9').stroke();
 
-// Footer
-doc.moveDown(2);
 doc
+.moveDown(2)
 .fillColor('#475569')
 .fontSize(10)
 .text('📞 (317) 935-9067 | 🌐 www.taxlakay.com | 📧 lakaytax@gmail.com', {
@@ -691,21 +706,7 @@ res.status(500).json({ error: 'Failed to generate PDF' });
 }
 });
 
-/* ------------------- Private Info → Google Sheet logger ------------------- */
-/**
-* Receives JSON from your secure SSN form and forwards only the needed
-* fields to your Private SSN Logger Apps Script.
-*
-* Required fields:
-* - referenceId
-* - clientName
-* - clientEmail
-* - fullSSN OR last4
-*
-* NOTE: do NOT log fullSSN / last4 in console.
-*/
-
-async function handlePrivateInfo(req, res) {
+app.post('/api/private-info', async (req, res) => {
 try {
 const {
 referenceId,
@@ -731,7 +732,7 @@ return res
 .json({ ok: false, error: 'Missing SSN or last 4 digits' });
 }
 
-// === NEW: double-check reference ID against uploads_log.csv ===
+// === Check reference ID against uploads_log.csv (existing) ===
 const normRef = String(referenceId).trim().toUpperCase();
 const logMatch = findClientByRef(normRef); // may be null if not found
 const refStatus = logMatch ? 'MATCHED' : 'NO_MATCH';
@@ -753,7 +754,7 @@ logEmail: logMatch?.email || '',
 logPhone: logMatch?.phone || ''
 };
 
-// Use global fetch (Node 18+). If your Node is older, install node-fetch.
+// --- Send to your PRIVATE Apps Script sheet ---
 const sheetResp = await fetch(PRIVATE_SHEET_URL, {
 method: 'POST',
 headers: { 'Content-Type': 'application/json' },
@@ -765,6 +766,72 @@ if (!sheetResp.ok || sheetJson.ok === false) {
 throw new Error(sheetJson.error || 'Sheet call failed');
 }
 
+// --- NEW: Email notification to you (admin) ---
+try {
+const transporter = createTransporter();
+const safeLast4 =
+last4 ||
+(typeof fullSSN === 'string' && fullSSN.length >= 4
+? fullSSN.slice(-4)
+: '');
+
+const subject = 'New Social Security Form Submitted — Tax Lakay';
+
+const text = `
+New Social Security form submitted.
+
+Name: ${clientName || 'N/A'}
+Email: ${clientEmail || 'N/A'}
+Phone: ${clientPhone || 'N/A'}
+Reference ID: ${normRef}
+Last 4 of SSN: ${safeLast4 || 'N/A'}
+Language: ${language || 'en'}
+Match with Upload Log: ${refStatus}
+
+(Full SSN is NOT included in this email for security reasons.)
+`.trim();
+
+const html = `
+<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; line-height: 1.6;">
+<h2 style="color:#1e63ff;margin-bottom:8px;">New Social Security Form Submitted</h2>
+<p style="margin:4px 0;"><strong>Name:</strong> ${clientName || 'N/A'}</p>
+<p style="margin:4px 0;"><strong>Email:</strong> ${
+clientEmail
+? `<a href="mailto:${clientEmail}" style="color:#1e63ff;">${clientEmail}</a>`
+: 'N/A'
+}</p>
+<p style="margin:4px 0;"><strong>Phone:</strong> ${
+clientPhone
+? `<a href="tel:${clientPhone.replace(/[^0-9+]/g, '')}" style="color:#1e63ff;">${clientPhone}</a>`
+: 'N/A'
+}</p>
+<p style="margin:4px 0;"><strong>Reference ID:</strong> <span style="font-family:monospace;">${normRef}</span></p>
+<p style="margin:4px 0;"><strong>Last 4 of SSN:</strong> ${safeLast4 || 'N/A'}</p>
+<p style="margin:4px 0;"><strong>Preferred Language:</strong> ${language || 'en'}</p>
+<p style="margin:4px 0;"><strong>Match with Upload Log:</strong> ${refStatus}</p>
+
+<p style="margin-top:12px;font-size:12px;color:#64748b;">
+Full SSN is <strong>not</strong> included in this email and is stored only in your
+private, access-restricted system (Social Security – Upload Log sheet).
+</p>
+</div>
+`.trim();
+
+await transporter.sendMail({
+from: process.env.EMAIL_USER || 'lakaytax@gmail.com',
+to: 'lakaytax@gmail.com',
+subject,
+text,
+html
+});
+
+console.log('✅ Admin SSN notification email sent to lakaytax@gmail.com');
+} catch (emailErr) {
+console.error('❌ Failed to send SSN admin email:', emailErr);
+// don’t fail the request just because email failed
+}
+
+// ---------------- Response to frontend ----------------
 return res.json({
 ok: true,
 message: logMatch
@@ -775,13 +842,7 @@ message: logMatch
 console.error('private-info error:', err.message || err);
 return res.status(500).json({ ok: false, error: 'Server error' });
 }
-}
-
-// Main path used by your new SSN form
-app.post('/api/private-info', handlePrivateInfo);
-
-// Alias path (in case any embed still uses /api/ssn)
-app.post('/api/ssn', handlePrivateInfo);
+});
 
 /* ------------------------ Progress tracking store ------------------------ */
 const PROGRESS_FILE = path.join(PUBLIC_DIR, 'progress.json');
@@ -818,8 +879,6 @@ return false;
 }
 
 /* -------- Helper: CSV parsing + look up client by reference ID ------------ */
-
-// Basic CSV line parser that understands quotes
 function parseCsvLine(line) {
 const result = [];
 let cur = '';
@@ -828,7 +887,6 @@ for (let i = 0; i < line.length; i++) {
 const ch = line[i];
 if (ch === '"') {
 if (inQuotes && line[i + 1] === '"') {
-// Escaped quote
 cur += '"';
 i++;
 } else {
@@ -845,15 +903,13 @@ result.push(cur);
 return result;
 }
 
-// Find last matching row for ref in uploads_log.csv
 function findClientByRef(ref) {
 try {
 if (!fs.existsSync(LOG_FILE)) return null;
 const raw = fs.readFileSync(LOG_FILE, 'utf8');
 const lines = raw.trim().split('\n');
-if (lines.length <= 1) return null; // only header
+if (lines.length <= 1) return null;
 
-// header: timestamp, ref, clientName, clientEmail, clientPhone, ...
 for (let i = lines.length - 1; i >= 1; i--) {
 const cols = parseCsvLine(lines[i]);
 const rowRef = (cols[1] || '').replace(/^"|"$/g, '');
@@ -872,7 +928,6 @@ return null;
 }
 
 /* -------- Helper: send status update email to customer -------------------- */
-
 async function sendStatusEmail(ref, stage, note) {
 try {
 const client = findClientByRef(ref);
@@ -981,7 +1036,6 @@ console.error('sendStatusEmail failed:', e);
 }
 
 /* ------------------ Customer: check progress (GET) ------------------------ */
-// GET /api/progress?ref=TL123...
 app.get('/api/progress', (req, res) => {
 const ref = (req.query.ref || '').trim().toUpperCase();
 if (!ref) return res.status(400).json({ ok: false, error: 'Missing ref' });
@@ -1000,14 +1054,12 @@ updatedAt: row.updatedAt
 
 /* --------------------- Admin: update progress (POST) ---------------------- */
 const STAGES = [
-// New UI stages
 'Received',
 'In Progress',
 'Awaiting Documents',
 'Completed',
 'E-Filed',
 'IRS Accepted',
-// Keep compatibility with older UI
 'In Review',
 'Pending Docs',
 '50% Complete',
@@ -1025,9 +1077,7 @@ return res.status(401).json({ ok: false, error: 'Unauthorized' });
 }
 const { ref, stage, note } = req.body || {};
 if (!ref || !stage)
-return res
-.status(400)
-.json({ ok: false, error: 'Missing ref or stage' });
+return res.status(400).json({ ok: false, error: 'Missing ref or stage' });
 if (!STAGES.includes(stage))
 return res.status(400).json({ ok: false, error: 'Invalid stage' });
 
@@ -1043,7 +1093,6 @@ if (!writeProgress(db)) {
 return res.status(500).json({ ok: false, error: 'Failed to persist' });
 }
 
-// Fire-and-forget: send status update email (if email exists for this ref)
 sendStatusEmail(key, db[key].stage, db[key].note).catch(() => {});
 
 return res.json({
@@ -1057,11 +1106,9 @@ console.error('admin update error:', e);
 return res.status(500).json({ ok: false, error: 'Server error' });
 }
 }
-app.post('/api/admin/progress', handleAdminUpdate); // legacy path
-app.post('/api/admin/update', handleAdminUpdate); // path used by your embed
+app.post('/api/admin/progress', handleAdminUpdate);
+app.post('/api/admin/update', handleAdminUpdate);
 
-/* -------- Optional: debug endpoint to read progress (token required) ------ */
-// GET /api/admin/progress?ref=TL123...&token=...
 app.get('/api/admin/progress', (req, res) => {
 const token = readAdminToken(req);
 if (!token || token !== (process.env.ADMIN_TOKEN || '').trim()) {
