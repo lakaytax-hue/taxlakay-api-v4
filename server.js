@@ -25,7 +25,7 @@ const PRIVATE_SHEET_URL =
 */
 const DRIVE_PARENT_FOLDER_ID =
 process.env.GOOGLE_DRIVE_PARENT_FOLDER_ID ||
-'1lsRjBQCq40a0FiuJSLrMA7QJRa2qDOj5F083upWAB';
+'1rUhyZ5c73vgs3MHvFhzd7yHeMEC_womJ';
 
 let drive = null;
 
