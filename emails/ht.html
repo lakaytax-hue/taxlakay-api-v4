@@ -1,64 +1,185 @@
-<!DOCTYPE html>
+<!doctype html>
 <html>
 <head>
-<meta charset="UTF-8">
-<title>Tax Lakay – Konfimasyon</title>
+<meta charset="utf-8">
+<title>Konfimasyon Tax Lakay</title>
 <style>
-body{font-family:Arial,sans-serif;background:#f9f9f9;margin:0;padding:20px;color:#333;}
-.card{background:#fff;border-radius:12px;max-width:600px;margin:auto;padding:20px;box-shadow:0 2px 6px rgba(0,0,0,0.08);}
-.logo{width:120px;display:block;margin:0 auto 20px;}
-.title{text-align:center;color:#1e63ff;font-size:22px;font-weight:bold;}
-.ref-box{background:#f0f9ff;border-left:5px solid #1e63ff;padding:12px 15px;margin:18px 0;border-radius:8px;}
-.important{font-size:16px;font-weight:bold;color:#b91c1c;background:#fee2e2;padding:12px;border-radius:8px;margin-top:15px;}
+body{
+font-family:Arial,sans-serif;
+background:#f9f9f9;
+margin:0;
+padding:20px;
+color:#333;
+}
+.card{
+background:#fff;
+border-radius:10px;
+max-width:600px;
+margin:auto;
+padding:25px;
+border:1px solid #eee;
+}
+.header{text-align:center;}
+.logo{width:140px;margin-bottom:10px;}
+h2{color:#1e63ff;margin:10px 0;}
+.ref-box{
+background:#f3f4f6;
+padding:12px;
+border-radius:8px;
+margin:15px 0;
+font-weight:700;
+text-align:center;
+}
+.section-title{
+font-weight:bold;
+margin-top:18px;
+margin-bottom:6px;
+color:#111827;
+}
+.btn-link{
+display:inline-block;
+margin-top:10px;
+padding:10px 18px;
+background:#1e63ff;
+color:#fff !important;
+text-decoration:none;
+border-radius:8px;
+font-weight:bold;
+font-size:14px;
+}
+.btn-link:hover{opacity:0.9;}
+.important-ssn{
+margin-top:18px;
+padding:14px;
+border-radius:10px;
+background:#fef2f2;
+border:1px solid #fecaca;
+color:#b91c1c;
+}
+.important-ssn strong.big{
+display:block;
+font-size:18px;
+text-transform:uppercase;
+}
+.links-list a{
+color:#1e63ff;
+text-decoration:none;
+font-weight:bold;
+}
+.links-list a:hover{text-decoration:underline;}
+.footer{
+margin-top:22px;
+font-size:13px;
+color:#6b7280;
+text-align:center;
+}
+.footer a{
+color:#1e63ff;
+text-decoration:none;
+}
 </style>
 </head>
-
 <body>
 <div class="card">
+<div class="header">
+<img src="https://drive.google.com/file/d/1HiezWKmpHyuYV3HS5bOkMPsEosCxebmB/view?usp=drive_link" class="logo" alt="Tax Lakay">
+<h2>Tax Lakay</h2>
+<p><em>Rapid • Fyab • Abòdab</em></p>
+</div>
 
-<img src="https://taxlakay-api-v4.onrender.com/logo.png" class="logo">
+<p>Bonjou <b>{{client_name}}</b>,</p>
 
-<h2 class="title">Tax Lakay</h2>
-<p style="text-align:center; font-style:italic; color:#555;">Rapid • Fikse • Abòdab</p>
-
-<p>Bonjou {{clientName}},</p>
-
-<p>Mèsi anpil paske ou chwazi <strong>Tax Lakay</strong>! Nou resevwa dokiman ou yo an sekirite epi n ap kòmanse prepare deklarasyon taks ou la byento.</p>
+<p>
+Mèsi anpil paske ou chwazi <b>Tax Lakay</b>. Nou resevwa dokiman ou yo an sekirite,
+epi n ap kòmanse travay sou deklarasyon taks ou la trè byento. Si nou bezwen plis
+enfòmasyon, n ap kontakte w san pèdi tan.
+</p>
 
 <div class="ref-box">
-<p style="margin:0; font-size:16px;">
-<strong>Reference ID ou:</strong>
-<span style="color:#1e63ff; font-family:monospace;">{{referenceId}}</span>
+Nimewo referans ou: <b>{{ref_number}}</b>
+</div>
+
+<!-- IMPORTANT SSN SECTION -->
+<div class="important-ssn">
+<strong class="big" style="font-family:Arial,sans-serif;">
+ENPÒTAN: NOU PA KAPAB KÒMANSE FILING TAKS OU SAN NIMEWO SEKIRITE SOSYAL (SSN) OU.
+</strong>
+<p>
+Si ou poko bay nimewo sekirite sosyal ou (SSN), tanpri ranpli fòm an liy
+ki an sekirite sa a pi vit posib:
+</p>
+
+<a class="btn-link"
+href="https://www.taxlakay.com/secure-social-security-form"
+target="_blank" rel="noopener">
+Fòm Sekirize pou SSN
+</a>
+</div>
+
+<!-- AUTO-UPDATE + TRACKING -->
+<div>
+<p>
+Pandan n ap travay sou deklarasyon ou, w ap resevwa
+<b>mizajou otomatik pa imel</b> chak fwa gen yon gwo etap:
+lè n ap revize dosye w la, si gen plis papye nou bezwen,
+lè n depoze deklarasyon an, epi lè IRS aksepte li.
+</p>
+
+<p>
+Ou kapab tou verifye eta deklarasyon ou nenpòt lè sou paj swivi nou an.
+Tanpri sèvi ak nimewo referans inik ou a:
+<b>{{ref_number}}</b>.
+</p>
+
+<a class="btn-link"
+href="https://www.taxlakay.com/filing-status"
+target="_blank" rel="noopener">
+Swiv eta deklarasyon mwen
+</a>
+</div>
+
+<!-- IRS refund tracking -->
+<div>
+<div class="section-title">Swiv ranbousman ou ak IRS</div>
+<p>
+Lè deklarasyon ou deja depoze epi IRS fin aksepte li, ou kapab
+swiv ranbousman ou dirèkteman sou sit ofisyèl IRS la:
+</p>
+<p class="links-list">
+💰 <a href="https://www.irs.gov/wheres-my-refund" target="_blank" rel="noopener">
+https://www.irs.gov/wheres-my-refund
+</a>
 </p>
 </div>
 
-<div class="important">
-ENPÒTAN: Nou pa kapab kòmanse travay sou deklarasyon taks ou a jiskaske ou voye nimewo Sekirite Sosyal ou (SSN).<br>
-Tanpri ranpli fòm sekirize a isit la:<br>
-<a href="https://www.taxlakay.com/secure-social-security-form" style="color:#1e63ff; font-weight:bold;">Fòm Sekirite Sosyal Sekirize</a>
-</div>
-
-<p style="margin-top:18px;">
-Ou pral resevwa imèl mizajou otomatik pandan pwosesis ranpli a.<br>
-Ou kapab tcheke estati dosye ou nenpòt lè ak <strong>Reference ID</strong> ou:
-<br>
-<a href="https://www.taxlakay.com/filing-status" style="color:#1e63ff; font-weight:bold;">Tcheke Estati Dosye</a>
-</p>
-
-<h3 style="margin-top:25px;">Men 2 dokiman enpòtan pou ou:</h3>
-<ul>
-<li><a href="https://drive.google.com/file/d/1wYv8X2IM9noy5pRDG3aPIdr03KbJAe0K/view?usp=sharing">Dwa Ou Kòm Kontribyab</a></li>
-<li><a href="https://drive.google.com/file/d/1DuQjewOtFetXciByvjl47LfrC6KTyqsn/view?usp=sharing">Règleman sou Konfidansyalite & Sekirite</a></li>
+<!-- Rights & privacy documents -->
+<div>
+<div class="section-title">Dwa w ak vi prive w</div>
+<p>Pou konvenyans ou, men de dokiman enpòtan pou dosye ou:</p>
+<ul class="links-list" style="padding-left:18px;">
+<li>
+<a href="https://drive.google.com/file/d/1wYv8X2IM9noy5pRDG3aPIdr03KbJAe0K/view?usp=sharing"
+target="_blank" rel="noopener">
+Enfòmasyon sou dwa kontribyab la (PDF)
+</a>
+</li>
+<li>
+<a href="https://drive.google.com/file/d/1DuQjewOtFetXciByvjl47LfrC6KTyqsn/view?usp=sharing"
+target="_blank" rel="noopener">
+Règleman vi prive ak sekirite Tax Lakay (PDF)
+</a>
+</li>
 </ul>
+</div>
 
-<p style="margin-top:25px;">Sincèrement,<br><strong>Ekip Tax Lakay</strong></p>
-
-<p style="color:#555; font-size:13px; text-align:center; margin-top:30px;">
-📧 <a href="mailto:lakaytax@gmail.com">lakaytax@gmail.com</a> •
-📞 <a href="tel:13179359067">(317) 935-9067</a> •
+<div class="footer">
+<p>Mèsi ankò paske ou mete konfyans ou nan <b>Tax Lakay</b> pou deklarasyon taks ou.</p>
+<p>
+📞 <a href="tel:+13179359067">(317) 935-9067</a> &nbsp;|&nbsp;
+📧 <a href="mailto:lakaytax@gmail.com">lakaytax@gmail.com</a> &nbsp;|&nbsp;
 🌐 <a href="https://www.taxlakay.com">www.taxlakay.com</a>
 </p>
-
+</div>
 </div>
 </body>
 </html>
