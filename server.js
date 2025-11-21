@@ -20,10 +20,14 @@ const PRIVATE_SHEET_URL =
 
 /* --------------------------- Google Drive Setup --------------------------- */
 /**
-* Files will be stored under this parent folder in your Google Drive.
-* Make sure GOOGLE_DRIVE_PARENT_FOLDER_ID is set in Render.
+* Files will be stored under this parent folder in your Google Drive:
+* Tax Lakay – Client Uploads
+* Folder URL looked like:
+* https://drive.google.com/drive/folders/16tx8uhyrq79K481-2Ey1SZz-ScRb5EJh
 */
-const DRIVE_PARENT_FOLDER_ID ='16tx8uhyrq79K481-2Ey1SZz-ScRb5EJh';
+const DRIVE_PARENT_FOLDER_ID =
+process.env.GOOGLE_DRIVE_PARENT_FOLDER_ID ||
+'16tx8uhyrq79K481-2Ey1SZz-ScRb5EJh';
 
 let drive = null;
 
@@ -37,7 +41,6 @@ console.warn('⚠️ Google Drive not fully configured. Skipping Drive uploads.'
 return;
 }
 
-// Render usually stores the key with \n, convert to real newlines
 const privateKey = rawKey.replace(/\\n/g, '\n');
 
 const auth = new google.auth.JWT(
@@ -48,7 +51,7 @@ privateKey,
 );
 
 drive = google.drive({ version: 'v3', auth });
-console.log('✅ Google Drive client initialized. Parent folder:', DRIVE_PARENT_FOLDER_ID);
+console.log('✅ Google Drive client initialized');
 } catch (e) {
 console.error('❌ Failed to init Google Drive client:', e);
 drive = null;
