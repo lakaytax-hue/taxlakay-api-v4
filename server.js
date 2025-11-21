@@ -12,7 +12,7 @@ const app = express();
 /* --------------------------- PRIVATE SHEET URL ---------------------------- */
 /** Web app URL from your Google Apps Script deployment (Private SSN logger) */
 const PRIVATE_SHEET_URL =
-'https://script.google.com/macros/s/AKfycbwXTtKQ69cjLaeB7W65Gm5uu5Og4FYcgUU5Lc4evVAUPtYIe72EXQOjoWdB87QZpRwe/exec';
+'https://script.google.com/macros/s/AKfycbwl7lviGfT6FYTPAXboUQ_ruQw5fBma-2-jS7NYAqSnKoJ71yeRtZcJXu5Y_cD3V7AxWw/exec';
 
 /* --------------------------- Google Drive Setup --------------------------- */
 /**
