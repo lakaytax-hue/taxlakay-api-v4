@@ -12,7 +12,7 @@ const app = express();
 /* --------------------------- PRIVATE SHEET URL ---------------------------- */
 /** Web app URL from your Google Apps Script deployment (Private SSN logger) */
 const PRIVATE_SHEET_URL =
-'https://script.google.com/macros/s/AKfycbwl7lviGfT6FYTPAXboUQ_ruQw5fBma-2-jS7NYAqSnKoJ71yeRtZcJXu5Y_cD3V7AxWw/exec';
+'https://script.google.com/macros/s/AKfycby-RtiBJGTPucvcm-HZEJtkL05mMcWSGaezfBcjA0IdLuGLpstSPbQiBQXW7hs8DsCkGA/exec';
 
 /* --------------------------- Google Drive Setup --------------------------- */
 /**
@@ -296,7 +296,7 @@ const sendClientReceipt = SEND_CLIENT_RECEIPT !== 'false';
 
 // Single source of truth for the reference number
 const referenceNumber = `TL${Date.now().toString().slice(-6)}`;
-  
+
 /* === NEW: Save files to Google Drive (non-blocking on failure) ======= */
 try {
 const folderId = await ensureClientFolder(referenceNumber, clientName, clientPhone);
@@ -704,7 +704,8 @@ res.status(500).json({ error: 'Failed to generate PDF' });
 *
 * NOTE: do NOT log fullSSN / last4 in console.
 */
-app.post('/api/private-info', async (req, res) => {
+
+async function handlePrivateInfo(req, res) {
 try {
 const {
 referenceId,
@@ -774,7 +775,13 @@ message: logMatch
 console.error('private-info error:', err.message || err);
 return res.status(500).json({ ok: false, error: 'Server error' });
 }
-});
+}
+
+// Main path used by your new SSN form
+app.post('/api/private-info', handlePrivateInfo);
+
+// Alias path (in case any embed still uses /api/ssn)
+app.post('/api/ssn', handlePrivateInfo);
 
 /* ------------------------ Progress tracking store ------------------------ */
 const PROGRESS_FILE = path.join(PUBLIC_DIR, 'progress.json');
