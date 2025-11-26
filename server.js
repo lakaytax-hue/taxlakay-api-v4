@@ -18,6 +18,10 @@ const UPLOAD_SHEET_URL =
 const PRIVATE_SHEET_URL =
 'https://script.google.com/macros/s/AKfycby-RtiBJGTPucvcm-HZEJtkL05mMcWSGaezfBcjA0IdLuGLpstSPbQiBQXW7hs8DsCkGA/exec';
 
+/** NEW – BANK INFO LOG (Bank Info – Upload Log) */
+const BANK_SHEET_URL =
+https://script.google.com/macros/s/AKfycbzB5LskRlFIpsZZLH3qhGYO9wJAyapnp6Dn_x5AsKC-OBTgeiFNU_F8NMnXR8dfbs3f_Q/exec;
+
 /* --------------------------- Google Drive Setup --------------------------- */
 /**
 * Files will be stored under this parent folder in your Google Drive:
@@ -134,6 +138,73 @@ console.error('❌ Failed to upload file to Drive:', e);
 }
 }
 
+/* ---------------- USPS ADDRESS VALIDATION HELPER ------------------------- */
+/**
+* Very small USPS Web Tools Address Verify helper.
+* Uses environment variable: USPS_USER_ID
+* Returns { formatted } or null
+*/
+async function verifyAddressWithUSPS(rawAddress) {
+try {
+const userId = process.env.USPS_USER_ID;
+if (!userId || !rawAddress) return null;
+
+const parts = String(rawAddress).split(',');
+if (parts.length < 3) return null;
+
+const street = (parts[0] || '').trim();
+const city = (parts[1] || '').trim();
+const stateZip = (parts[2] || '').trim().split(/\s+/);
+const state = stateZip[0] || '';
+const zip5 = (stateZip[1] || '').slice(0, 5) || '';
+
+if (!street || !city || !state || !zip5) return null;
+
+const xml =
+`<AddressValidateRequest USERID="${userId}">` +
+`<Revision>1</Revision>` +
+`<Address ID="0">` +
+`<Address1></Address1>` +
+`<Address2>${street}</Address2>` +
+`<City>${city}</City>` +
+`<State>${state}</State>` +
+`<Zip5>${zip5}</Zip5>` +
+`<Zip4></Zip4>` +
+`</Address>` +
+`</AddressValidateRequest>`;
+
+const url =
+'https://secure.shippingapis.com/ShippingAPI.dll?API=Verify&XML=' +
+encodeURIComponent(xml);
+
+const resp = await fetch(url);
+const text = await resp.text();
+
+if (text.includes('<Error>')) {
+console.warn('USPS returned error for address:', rawAddress);
+return null;
+}
+
+function pick(tag) {
+const m = text.match(new RegExp(`<${tag}>([^<]*)</${tag}>`, 'i'));
+return m ? m[1].trim() : '';
+}
+
+const addr2 = pick('Address2');
+const cityResult = pick('City');
+const stateResult = pick('State');
+const zip5Result = pick('Zip5');
+
+if (!addr2 || !cityResult || !stateResult || !zip5Result) return null;
+
+const formatted = `${addr2}, ${cityResult}, ${stateResult} ${zip5Result}`;
+return { formatted };
+} catch (e) {
+console.error('USPS verifyAddressWithUSPS failed:', e);
+return null;
+}
+}
+
 /* ----------------------------- CORS (unified) ----------------------------- */
 const ALLOWED_HOSTS = new Set([
 'www.taxlakay.com',
@@ -191,8 +262,8 @@ console.warn(`⚠️ Email template not found: ${filePath}`);
 return null;
 }
 return fs.readFileSync(filePath, 'utf8');
-} catch (e) {
-console.error('❌ Failed to load email template:', e);
+} catch (E) {
+console.error('❌ Failed to load email template:', E);
 return null;
 }
 }
@@ -283,6 +354,7 @@ const {
 clientName,
 clientEmail,
 clientPhone,
+clientAddress, // NEW – optional address from upload form
 returnType,
 dependents,
 clientMessage,
@@ -297,6 +369,16 @@ const lang = ['en', 'es', 'ht'].includes((clientLanguage || '').toLowerCase())
 const sendClientReceipt = SEND_CLIENT_RECEIPT !== 'false';
 
 const referenceNumber = `TL${Date.now().toString().slice(-6)}`;
+
+/* === Optional USPS validate for upload address (admin info only) ===== */
+let uploadUspsSuggestion = null;
+try {
+if (clientAddress && process.env.USPS_USER_ID) {
+uploadUspsSuggestion = await verifyAddressWithUSPS(clientAddress);
+}
+} catch (e) {
+console.error('❌ USPS validation for upload form failed:', e);
+}
 
 /* === Google Drive upload (non-blocking on failure) ==================== */
 try {
@@ -321,6 +403,7 @@ referenceId: referenceNumber,
 clientName: clientName || '',
 clientEmail: clientEmail || '',
 clientPhone: clientPhone || '',
+clientAddress: clientAddress || '',
 service: returnType || 'Tax Preparation — $150 Flat',
 returnType: returnType || '',
 dependents: dependents || '0',
@@ -350,9 +433,14 @@ console.error('❌ Failed calling Upload Sheet logger:', e);
 const transporter = createTransporter();
 
 /* ---------------- Email to YOU (admin) ---------------- */
+const adminTo =
+process.env.OWNER_EMAIL ||
+process.env.EMAIL_USER ||
+'lakaytax@gmail.com';
+
 const adminEmail = {
 from: process.env.EMAIL_USER || 'lakaytax@gmail.com',
-to: 'lakaytax@gmail.com',
+to: adminTo,
 replyTo: clientEmail || undefined,
 subject: `📋 New Tax Document Upload - ${clientName || 'Customer'}`,
 html: `
@@ -372,6 +460,12 @@ clientPhone
 }</p>
 <p><strong>Return Type:</strong> ${returnType || 'Not specified'}</p>
 <p><strong>Dependents:</strong> ${dependents || '0'}</p>
+<p><strong>Address (client):</strong> ${clientAddress || 'Not provided'}</p>
+${
+uploadUspsSuggestion && uploadUspsSuggestion.formatted
+? `<p><strong>USPS suggested:</strong> ${uploadUspsSuggestion.formatted}</p>`
+: ''
+}
 <p><strong>Files Uploaded:</strong> ${req.files.length} files</p>
 <p><strong>Reference #:</strong> ${referenceNumber}</p>
 ${clientMessage ? `<p><strong>Client Message:</strong> ${clientMessage}</p>` : ''}
@@ -380,12 +474,14 @@ ${clientMessage ? `<p><strong>Client Message:</strong> ${clientMessage}</p>` : '
 <div style="background: #dcfce7; padding: 10px; border-radius: 5px;">
 <p><strong>Files received:</strong></p>
 <ul>
-${req.files
+${
+req.files
 .map(
 file =>
 `<li>${file.originalname} (${(file.size / 1024 / 1024).toFixed(2)} MB)</li>`
 )
-.join('')}
+.join('')
+}
 </ul>
 </div>
 
@@ -511,7 +607,7 @@ console.error('❌ Failed to send client email:', emailError);
 }
 
 await transporter.sendMail(adminEmail);
-console.log('✅ Admin notification email sent to lakaytax@gmail.com');
+console.log('✅ Admin notification email sent to', adminTo);
 
 /* ------------- CSV log append ------------- */
 try {
@@ -558,7 +654,9 @@ ok: true,
 message: 'Files uploaded successfully! Confirmation email sent.',
 filesReceived: req.files.length,
 clientEmailSent,
-ref: referenceNumber
+ref: referenceNumber,
+clientAddress: clientAddress || '',
+uspsSuggestedAddress: uploadUspsSuggestion?.formatted || null
 });
 } catch (error) {
 console.error('❌ Upload error:', error);
@@ -709,6 +807,7 @@ res.status(500).json({ error: 'Failed to generate PDF' });
 }
 });
 
+/* ---------------------- PRIVATE SSN /info endpoint ----------------------- */
 app.post('/api/private-info', async (req, res) => {
 try {
 const {
@@ -809,7 +908,7 @@ clientPhone
 : 'N/A'
 }</p>
 <p style="margin:4px 0;"><strong>Reference ID:</strong> <span style="font-family:monospace;">${normRef}</span></p>
-<p style="margin:4px 0;"><strong>Last 4 of SSN:</strong> ${safeLast4 || 'N/A'}</p>
+<p style="margin:4px 0;"><strong>Last 4 of SSN:</strong> ${safeLast4 || 'NA'}</p>
 <p style="margin:4px 0;"><strong>Preferred Language:</strong> ${language || 'en'}</p>
 <p style="margin:4px 0;"><strong>Match with Upload Log:</strong> ${refStatus}</p>
 
@@ -843,6 +942,223 @@ message: logMatch
 });
 } catch (err) {
 console.error('private-info error:', err.message || err);
+return res.status(500).json({ ok: false, error: 'Server error' });
+}
+});
+
+/* ------------------------ BANK INFO (PRIVATE PAGE) ------------------------ */
+/**
+* Receives submissions from your Bank Information form:
+* /api/bank-info
+*
+* - USPS verifies address and suggests correction (if addressConfirmed !== 'yes')
+* - Logs to BANK_SHEET_URL (Apps Script)
+* - Sends admin email (masked routing/account)
+*/
+app.post("/api/bank-info", async (req, res) => {
+try {
+const {
+referenceId,
+clientName,
+clientEmail,
+clientPhone,
+currentAddress,
+bankName,
+accountType,
+routingNumber,
+accountNumber,
+comments,
+addressConfirmed,
+fullAddress
+} = req.body || {};
+
+// Required fields
+if (!referenceId || !clientName || !clientEmail || !routingNumber || !accountNumber) {
+return res.status(400).json({
+ok: false,
+error: "Missing required fields"
+});
+}
+
+// Prepare data for Google Sheet
+const payload = {
+referenceId,
+clientName,
+clientEmail,
+clientPhone: clientPhone || "",
+currentAddress: currentAddress || "",
+bankName: bankName || "",
+accountType: accountType || "",
+routingNumber,
+accountNumber,
+comments: comments || "",
+addressConfirmed: addressConfirmed || "",
+fullAddress: fullAddress || ""
+};
+
+// Send to Google Sheets Webhook
+const sheetURL = process.env.BANK_SHEET_URL;
+
+const response = await fetch(sheetURL, {
+method: "POST",
+headers: { "Content-Type": "application/json" },
+body: JSON.stringify(payload)
+});
+
+const text = await response.text();
+
+console.log("Sheet Response:", text);
+
+return res.json({
+ok: true,
+message: "Bank information submitted successfully",
+sheetResponse: text
+});
+
+} catch (err) {
+console.error("Bank Info Error:", err);
+return res.status(500).json({
+ok: false,
+error: "Server error submitting bank info"
+});
+}
+});
+
+// Step 1: USPS suggestion if not confirmed yet
+if (currentAddress && process.env.USPS_USER_ID && addressConfirmed !== 'yes') {
+const usps = await verifyAddressWithUSPS(currentAddress);
+if (usps && usps.formatted) {
+const given = currentAddress.trim().toLowerCase();
+const suggested = usps.formatted.trim().toLowerCase();
+if (given !== suggested) {
+return res.json({
+ok: false,
+type: 'address_mismatch',
+suggestedAddress: usps.formatted
+});
+}
+}
+}
+
+// Step 2: log to bank sheet (Apps Script) — non-blocking on failure
+try {
+if (BANK_SHEET_URL) {
+const payload = {
+referenceId,
+clientName,
+clientEmail,
+clientPhone,
+address: currentAddress,
+bankName,
+accountType,
+routingLast4: String(routingNumber).slice(-4),
+accountLast4: String(accountNumber).slice(-4),
+comments: comments || '',
+source: 'Bank Info Form'
+};
+
+const r = await fetch(BANK_SHEET_URL, {
+method: 'POST',
+headers: { 'Content-Type': 'application/json' },
+body: JSON.stringify(payload)
+});
+
+const j = await r.json().catch(() => ({}));
+if (!r.ok || j.ok === false) {
+console.error('❌ BANK_SHEET_URL logger error:', j && j.error);
+} else {
+console.log('✅ Row logged to Bank Info sheet');
+}
+} else {
+console.warn('⚠️ BANK_SHEET_URL not configured; skipping bank log.');
+}
+} catch (e) {
+console.error('❌ Failed calling BANK_SHEET_URL:', e);
+}
+
+// Step 3: send admin email
+const mask = v => (v ? String(v).replace(/.(?=.{4})/g, '*') : '');
+const maskedRouting = mask(routingNumber);
+const maskedAccount = mask(accountNumber);
+
+const transporter = createTransporter();
+const adminTo =
+process.env.BANK_ALERT_EMAIL ||
+process.env.OWNER_EMAIL ||
+process.env.EMAIL_USER ||
+'lakaytax@gmail.com';
+
+const text = `
+New bank information submitted.
+
+Ref: ${referenceId}
+Name: ${clientName}
+Email: ${clientEmail}
+Phone: ${clientPhone || 'N/A'}
+Address: ${currentAddress}
+
+Bank: ${bankName}
+Type: ${accountType}
+Routing (masked): ${maskedRouting}
+Account (masked): ${maskedAccount}
+
+Comments:
+${comments || '(none)'}
+`.trim();
+
+const html = `
+<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; line-height: 1.6;">
+<h2 style="color:#1e63ff;margin-bottom:8px;">New Bank Information Submitted</h2>
+
+<div style="background:#f8fafc;border-radius:8px;padding:14px 16px;margin-bottom:12px;">
+<p style="margin:4px 0;"><strong>Ref:</strong> ${referenceId}</p>
+<p style="margin:4px 0;"><strong>Name:</strong> ${clientName}</p>
+<p style="margin:4px 0;"><strong>Email:</strong> ${
+clientEmail
+? `<a href="mailto:${clientEmail}" style="color:#1e63ff;">${clientEmail}</a>`
+: 'N/A'
+}</p>
+<p style="margin:4px 0;"><strong>Phone:</strong> ${
+clientPhone
+? `<a href="tel:${clientPhone.replace(/[^0-9+]/g, '')}" style="color:#1e63ff;">${clientPhone}</a>`
+: 'N/A'
+}</p>
+<p style="margin:4px 0;"><strong>Address:</strong> ${currentAddress}</p>
+</div>
+
+<div style="background:#ecfdf5;border-radius:8px;padding:14px 16px;margin-bottom:12px;">
+<p style="margin:4px 0;"><strong>Bank:</strong> ${bankName}</p>
+<p style="margin:4px 0;"><strong>Type:</strong> ${accountType}</p>
+<p style="margin:4px 0;"><strong>Routing (masked):</strong> ${maskedRouting}</p>
+<p style="margin:4px 0;"><strong>Account (masked):</strong> ${maskedAccount}</p>
+</div>
+
+${
+comments
+? `<p style="margin:4px 0;"><strong>Comments:</strong> ${comments}</p>`
+: ''
+}
+
+<p style="margin-top:12px;font-size:12px;color:#64748b;">
+Full routing and account numbers are <strong>not</strong> stored in email.
+Last four digits are visible only in your private sheet.
+</p>
+</div>
+`.trim();
+
+await transporter.sendMail({
+from: process.env.EMAIL_USER || 'lakaytax@gmail.com',
+to: adminTo,
+subject: `New Bank Info Submitted — Ref ${referenceId}`,
+text,
+html
+});
+
+console.log('✅ Bank info admin email sent to', adminTo);
+
+return res.json({ ok: true, message: 'Bank info received securely.' });
+} catch (e) {
+console.error('bank-info error:', e);
 return res.status(500).json({ ok: false, error: 'Server error' });
 }
 });
