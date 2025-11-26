@@ -20,7 +20,7 @@ const PRIVATE_SHEET_URL =
 
 /** NEW – BANK INFO LOG (Bank Info – Upload Log) */
 const BANK_SHEET_URL =
-https://script.google.com/macros/s/AKfycbzB5LskRlFIpsZZLH3qhGYO9wJAyapnp6Dn_x5AsKC-OBTgeiFNU_F8NMnXR8dfbs3f_Q/exec;
+'https://script.google.com/macros/s/AKfycbzB5LskRlFIpsZZLH3qhGYO9wJAyapnp6Dn_x5AsKC-OBTgeiFNU_F8NMnXR8dfbs3f_Q/exec';
 
 /* --------------------------- Google Drive Setup --------------------------- */
 /**
