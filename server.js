@@ -977,25 +977,24 @@ suggestedAddress: usps.formatted
 }
 }
 
-// Step 2: log to bank sheet (Apps Script) — non-blocking on failure
-try {
-if (BANK_SHEET_URL) {
+const routingLast4 = String(routingNumber || '').slice(-4);
+const accountLast4 = String(accountNumber || '').slice(-4);
+
 const payload = {
 referenceId,
 clientName,
 clientEmail,
 clientPhone,
-address: currentAddress,
-bankName,
-accountType,
-routingLast4: String(routingNumber).slice(-4),
-accountLast4: String(accountNumber).slice(-4),
+currentAddress: currentAddress || '',
+bankName: bankName || '',
+accountType: accountType || '',
+routingNumber: routingLast4, // sheet column
+accountNumber: accountLast4, // sheet column
 comments: comments || '',
-source: 'Bank Info Form',
-addressConfirmed: addressConfirmed || '',
-fullAddress: fullAddress || ''
+addressconfirmed: addressConfirmed || '',
+fullAddress: fullAddress || currentAddress || ''
 };
-
+  
 const r = await fetch(BANK_SHEET_URL, {
 method: 'POST',
 headers: { 'Content-Type': 'application/json' },
