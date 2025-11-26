@@ -974,8 +974,6 @@ type: 'address_mismatch',
 suggestedAddress: usps.formatted
 });
 }
-}
-}
 
 const routingLast4 = String(routingNumber || '').slice(-4);
 const accountLast4 = String(accountNumber || '').slice(-4);
