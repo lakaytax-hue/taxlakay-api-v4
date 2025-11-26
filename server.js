@@ -18,17 +18,12 @@ const UPLOAD_SHEET_URL =
 const PRIVATE_SHEET_URL =
 'https://script.google.com/macros/s/AKfycby-RtiBJGTPucvcm-HZEJtkL05mMcWSGaezfBcjA0IdLuGLpstSPbQiBQXW7hs8DsCkGA/exec';
 
-/** NEW – BANK INFO LOG (Bank Info – Upload Log) */
+/** BANK INFO LOG (Bank Info – Upload Log) */
 const BANK_SHEET_URL =
+process.env.BANK_SHEET_URL ||
 'https://script.google.com/macros/s/AKfycbzB5LskRlFIpsZZLH3qhGYO9wJAyapnp6Dn_x5AsKC-OBTgeiFNU_F8NMnXR8dfbs3f_Q/exec';
 
 /* --------------------------- Google Drive Setup --------------------------- */
-/**
-* Files will be stored under this parent folder in your Google Drive:
-* Tax Lakay – Client Uploads
-* Folder URL looked like:
-* https://drive.google.com/drive/folders/16tx8uhyrq79K481-2Ey1SZz-ScRb5EJh
-*/
 const DRIVE_PARENT_FOLDER_ID =
 process.env.GOOGLE_DRIVE_PARENT_FOLDER_ID ||
 '16tx8uhyrq79K481-2Ey1SZz-ScRb5EJh';
@@ -65,7 +60,6 @@ drive = null;
 /* Small helpers for Drive names */
 function sanitizeName(str) {
 if (!str) return '';
-// Remove characters not allowed in Drive / common file systems
 return String(str).replace(/[<>:"/\\|?*]+/g, '').trim();
 }
 
@@ -80,7 +74,6 @@ let folderName = `${safeRef} - ${safeName}`;
 if (safePhone) folderName += ` - ${safePhone}`;
 
 try {
-// Try to find existing folder with same name under parent
 const listRes = await drive.files.list({
 q: `'${DRIVE_PARENT_FOLDER_ID}' in parents and mimeType = 'application/vnd.google-apps.folder' and name = '${folderName.replace(/'/g, "\\'")}' and trashed = false`,
 fields: 'files(id, name)',
@@ -91,7 +84,6 @@ if (listRes.data.files && listRes.data.files.length > 0) {
 return listRes.data.files[0].id;
 }
 
-// Create new folder
 const createRes = await drive.files.create({
 requestBody: {
 name: folderName,
@@ -139,11 +131,6 @@ console.error('❌ Failed to upload file to Drive:', e);
 }
 
 /* ---------------- USPS ADDRESS VALIDATION HELPER ------------------------- */
-/**
-* Very small USPS Web Tools Address Verify helper.
-* Uses environment variable: USPS_USER_ID
-* Returns { formatted } or null
-*/
 async function verifyAddressWithUSPS(rawAddress) {
 try {
 const userId = process.env.USPS_USER_ID;
@@ -354,12 +341,15 @@ const {
 clientName,
 clientEmail,
 clientPhone,
-clientAddress, // NEW – optional address from upload form
+clientAddress, // legacy field
+currentAddress, // NEW preferred field
 returnType,
 dependents,
 clientMessage,
 SEND_CLIENT_RECEIPT,
-clientLanguage
+clientLanguage,
+cashAdvance, // NEW
+refundMethod // NEW
 } = req.body;
 
 const lang = ['en', 'es', 'ht'].includes((clientLanguage || '').toLowerCase())
@@ -370,11 +360,13 @@ const sendClientReceipt = SEND_CLIENT_RECEIPT !== 'false';
 
 const referenceNumber = `TL${Date.now().toString().slice(-6)}`;
 
+const addressForUsps = currentAddress || clientAddress || '';
+
 /* === Optional USPS validate for upload address (admin info only) ===== */
 let uploadUspsSuggestion = null;
 try {
-if (clientAddress && process.env.USPS_USER_ID) {
-uploadUspsSuggestion = await verifyAddressWithUSPS(clientAddress);
+if (addressForUsps && process.env.USPS_USER_ID) {
+uploadUspsSuggestion = await verifyAddressWithUSPS(addressForUsps);
 }
 } catch (e) {
 console.error('❌ USPS validation for upload form failed:', e);
@@ -396,7 +388,7 @@ console.warn(`⚠️ No Drive folder created for ref ${referenceNumber}`);
 console.error('❌ Drive upload block failed:', e);
 }
 
-/* === Upload Log → Apps Script (non-blocking) ========================= */
+/* === Upload Log → Apps Script (now with new fields) =================== */
 try {
 const sheetPayload = {
 referenceId: referenceNumber,
@@ -411,7 +403,10 @@ files: (req.files || []).map(f => f.originalname).join('; '),
 source: 'Main Upload Form',
 last4: '',
 private: 'No',
-language: lang
+language: lang,
+cashAdvance: cashAdvance || '', // ✅ NEW
+refundMethod: refundMethod || '', // ✅ NEW
+currentAddress: currentAddress || clientAddress || '' // ✅ NEW
 };
 
 const r = await fetch(UPLOAD_SHEET_URL, {
@@ -460,12 +455,14 @@ clientPhone
 }</p>
 <p><strong>Return Type:</strong> ${returnType || 'Not specified'}</p>
 <p><strong>Dependents:</strong> ${dependents || '0'}</p>
-<p><strong>Address (client):</strong> ${clientAddress || 'Not provided'}</p>
+<p><strong>Address (client):</strong> ${currentAddress || clientAddress || 'Not provided'}</p>
 ${
 uploadUspsSuggestion && uploadUspsSuggestion.formatted
 ? `<p><strong>USPS suggested:</strong> ${uploadUspsSuggestion.formatted}</p>`
 : ''
 }
+<p><strong>Cash Advance:</strong> ${cashAdvance || 'Not specified'}</p>
+<p><strong>Refund Method:</strong> ${refundMethod || 'Not specified'}</p>
 <p><strong>Files Uploaded:</strong> ${req.files.length} files</p>
 <p><strong>Reference #:</strong> ${referenceNumber}</p>
 ${clientMessage ? `<p><strong>Client Message:</strong> ${clientMessage}</p>` : ''}
@@ -655,7 +652,7 @@ message: 'Files uploaded successfully! Confirmation email sent.',
 filesReceived: req.files.length,
 clientEmailSent,
 ref: referenceNumber,
-clientAddress: clientAddress || '',
+clientAddress: addressForUsps || '',
 uspsSuggestedAddress: uploadUspsSuggestion?.formatted || null
 });
 } catch (error) {
@@ -665,7 +662,6 @@ res.status(500).json({ ok: false, error: 'Upload failed: ' + error.message });
 });
 
 /* --------------------- PDF route for Refund Estimator --------------------- */
-// (unchanged – keeping existing code)
 app.get('/api/estimator-pdf', (req, res) => {
 const {
 estimate = '—',
@@ -722,7 +718,6 @@ doc.end();
 });
 
 /* -------------------- Receipt PDF (Server-side) -------------------------- */
-// (keeping your previous receipt endpoint as-is)
 app.get('/api/receipt-pdf', (req, res) => {
 try {
 const {
@@ -834,9 +829,8 @@ return res
 .json({ ok: false, error: 'Missing SSN or last 4 digits' });
 }
 
-// === Check reference ID against uploads_log.csv (existing) ===
 const normRef = String(referenceId).trim().toUpperCase();
-const logMatch = findClientByRef(normRef); // may be null if not found
+const logMatch = findClientByRef(normRef);
 const refStatus = logMatch ? 'MATCHED' : 'NO_MATCH';
 
 const payload = {
@@ -849,14 +843,12 @@ last4: last4 || '',
 language: language || 'en',
 service: service || 'Tax Preparation — $150 Flat',
 source: source || 'SSN Form',
-// extra fields for your Sheet to help you reconcile
 refStatus,
 logName: logMatch?.name || '',
 logEmail: logMatch?.email || '',
 logPhone: logMatch?.phone || ''
 };
 
-// --- Send to your PRIVATE Apps Script sheet ---
 const sheetResp = await fetch(PRIVATE_SHEET_URL, {
 method: 'POST',
 headers: { 'Content-Type': 'application/json' },
@@ -868,7 +860,6 @@ if (!sheetResp.ok || sheetJson.ok === false) {
 throw new Error(sheetJson.error || 'Sheet call failed');
 }
 
-// --- NEW: Email notification to you (admin) ---
 try {
 const transporter = createTransporter();
 const safeLast4 =
@@ -930,10 +921,8 @@ html
 console.log('✅ Admin SSN notification email sent to lakaytax@gmail.com');
 } catch (emailErr) {
 console.error('❌ Failed to send SSN admin email:', emailErr);
-// don’t fail the request just because email failed
 }
 
-// ---------------- Response to frontend ----------------
 return res.json({
 ok: true,
 message: logMatch
@@ -947,15 +936,7 @@ return res.status(500).json({ ok: false, error: 'Server error' });
 });
 
 /* ------------------------ BANK INFO (PRIVATE PAGE) ------------------------ */
-/**
-* Receives submissions from your Bank Information form:
-* /api/bank-info
-*
-* - USPS verifies address and suggests correction (if addressConfirmed !== 'yes')
-* - Logs to BANK_SHEET_URL (Apps Script)
-* - Sends admin email (masked routing/account)
-*/
-app.post("/api/bank-info", async (req, res) => {
+app.post('/api/bank-info', async (req, res) => {
 try {
 const {
 referenceId,
@@ -976,53 +957,9 @@ fullAddress
 if (!referenceId || !clientName || !clientEmail || !routingNumber || !accountNumber) {
 return res.status(400).json({
 ok: false,
-error: "Missing required fields"
+error: 'Missing required fields'
 });
 }
-
-// Prepare data for Google Sheet
-const payload = {
-referenceId,
-clientName,
-clientEmail,
-clientPhone: clientPhone || "",
-currentAddress: currentAddress || "",
-bankName: bankName || "",
-accountType: accountType || "",
-routingNumber,
-accountNumber,
-comments: comments || "",
-addressConfirmed: addressConfirmed || "",
-fullAddress: fullAddress || ""
-};
-
-// Send to Google Sheets Webhook
-const sheetURL = process.env.BANK_SHEET_URL;
-
-const response = await fetch(sheetURL, {
-method: "POST",
-headers: { "Content-Type": "application/json" },
-body: JSON.stringify(payload)
-});
-
-const text = await response.text();
-
-console.log("Sheet Response:", text);
-
-return res.json({
-ok: true,
-message: "Bank information submitted successfully",
-sheetResponse: text
-});
-
-} catch (err) {
-console.error("Bank Info Error:", err);
-return res.status(500).json({
-ok: false,
-error: "Server error submitting bank info"
-});
-}
-});
 
 // Step 1: USPS suggestion if not confirmed yet
 if (currentAddress && process.env.USPS_USER_ID && addressConfirmed !== 'yes') {
@@ -1054,7 +991,9 @@ accountType,
 routingLast4: String(routingNumber).slice(-4),
 accountLast4: String(accountNumber).slice(-4),
 comments: comments || '',
-source: 'Bank Info Form'
+source: 'Bank Info Form',
+addressConfirmed: addressConfirmed || '',
+fullAddress: fullAddress || ''
 };
 
 const r = await fetch(BANK_SHEET_URL, {
