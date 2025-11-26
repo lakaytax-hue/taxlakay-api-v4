@@ -974,48 +974,9 @@ type: 'address_mismatch',
 suggestedAddress: usps.formatted
 });
 }
-
-  // Step 2: log to bank sheet (Apps Script) — non-blocking on failure
-try {
-if (BANK_SHEET_URL) {
-const routingLast4 = String(routingNumber || '').slice(-4);
-const accountLast4 = String(accountNumber || '').slice(-4);
-
-const payload = {
-referenceId,
-clientName,
-clientEmail,
-clientPhone,
-currentAddress: currentAddress || '',
-bankName: bankName || '',
-accountType: accountType || '',
-routingNumber: routingLast4, // sheet column
-accountNumber: accountLast4, // sheet column
-comments: comments || '',
-source: 'Bank Info Form',
-addressConfirmed: addressConfirmed || '',
-fullAddress: fullAddress || currentAddress || ''
-};
-
-const r = await fetch(BANK_SHEET_URL, {
-method: 'POST',
-headers: { 'Content-Type': 'application/json' },
-body: JSON.stringify(payload)
-});
-
-const j = await r.json().catch(() => ({}));
-if (!r.ok || j.ok === false) {
-console.error('❌ BANK_SHEET_URL logger error:', j && j.error);
-} else {
-console.log('✅ Row logged to Bank Info sheet');
 }
-} else {
-console.warn('⚠️ BANK_SHEET_URL not configured; skipping bank log.');
 }
-} catch (e) {
-console.error('❌ Failed calling BANK_SHEET_URL:', e);
-}
-  
+
 // Step 3: send admin email
 const mask = v => (v ? String(v).replace(/.(?=.{4})/g, '*') : '');
 const maskedRouting = mask(routingNumber);
