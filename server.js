@@ -492,23 +492,25 @@ console.error('❌ Drive upload block failed:', e);
 
 /* === Upload Log → Apps Script (now with new fields) =================== */
 try {
+const last4 = "";
 const sheetPayload = {
 referenceId: referenceNumber,
-clientName,
-clientEmail,
-clientPhone,
-service: returnType || 'Tax Preparation - $150 Flat',
-returnType,
-dependents,
-cashAdvance: cashAdvance || '',
-refundMethod: refundMethod || '',
-currentAddress: currentAddress || clientAddress || '',
-files: (req.files || []).map(f => f.originalname).join(', ') || 'No',
+clientName: clientName || '',
+clientEmail: clientEmail || '',
+clientPhone: clientPhone || '',
+clientAddress: clientAddress || '',
+service: returnType || 'Tax Preparation — $150 Flat',
+returnType: returnType || '',
+dependents: dependents || '0',
+files: (req.files || []).map(f => f.originalname).join('; '),
 source: 'Main Upload Form',
-last4: last4 || '',
+last4: '',
 private: 'No',
-language: lang || 'en',
-clientMessage: clientMessage || ''
+language: lang,
+cashAdvance: cashAdvance || '', // ✅ NEW
+refundMethod: refundMethod || '', // ✅ NEW
+currentAddress: currentAddress || clientAddress || '' // ✅ NEW
+clientMessage: clientMessage || '' 
 };
 const r = await fetch(UPLOAD_SHEET_URL, {
 method: 'POST',
