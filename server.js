@@ -447,18 +447,33 @@ const sendClientReceipt = SEND_CLIENT_RECEIPT !== 'false';
 
 const referenceNumber = `TL${Date.now().toString().slice(-6)}`;
 
+// === Optional USPS validate for upload address (customer-facing + admin) ===
 const addressForUsps = currentAddress || clientAddress || '';
-
-/* === Optional USPS validate for upload address (admin info only) ===== */
+const addressConfirmed = (req.body.addressConfirmed || '').toLowerCase();
 let uploadUspsSuggestion = null;
+
+// Step 1: if USPS is configured and address is not confirmed yet,
+// ask USPS and, if different, RETURN address_mismatch so front-end can show popup.
 try {
-if (addressForUsps && process.env.USPS_USER_ID) {
+if (addressForUsps && process.env.USPS_USER_ID && addressConfirmed !== 'yes') {
 uploadUspsSuggestion = await verifyAddressWithUSPS(addressForUsps);
+
+if (
+uploadUspsSuggestion &&
+uploadUspsSuggestion.formatted &&
+uploadUspsSuggestion.formatted.trim().toLowerCase() !== addressForUsps.trim().toLowerCase()
+) {
+return res.json({
+ok: false,
+type: 'address_mismatch',
+suggestedAddress: uploadUspsSuggestion.formatted
+});
+}
 }
 } catch (e) {
 console.error('❌ USPS validation for upload form failed:', e);
 }
-
+  
 /* === Google Drive upload (non-blocking on failure) ==================== */
 try {
 const folderId = await ensureClientFolder(referenceNumber, clientName, clientPhone);
