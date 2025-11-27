@@ -489,7 +489,7 @@ console.warn(`⚠️ No Drive folder created for ref ${referenceNumber}`);
 } catch (e) {
 console.error('❌ Drive upload block failed:', e);
 }
-
+  
 /* === Upload Log → Apps Script (now with new fields) =================== */
 try {
 const last4 = "";
@@ -509,8 +509,8 @@ private: 'No',
 language: lang,
 cashAdvance: cashAdvance || '', // ✅ NEW
 refundMethod: refundMethod || '', // ✅ NEW
-currentAddress: currentAddress || clientAddress || '' // ✅ NEW
-clientMessage: clientMessage || '',
+currentAddress: currentAddress || clientAddress || '', // ✅ NEW
+clientMessage: clientMessage || '' // ✅ FIXED — comma before this line
 };
 const r = await fetch(UPLOAD_SHEET_URL, {
 method: 'POST',
