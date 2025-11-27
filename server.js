@@ -9,36 +9,6 @@ const { google } = require('googleapis');
 const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args));
 const app = express();
 
-// ------------------ VALIDATE REFERENCE ID ------------------
-app.post('/api/validate-reference', express.json(), (req, res) => {
-try {
-const { referenceId } = req.body || {};
-if (!referenceId) {
-return res.json({ ok: false, message: "Reference ID is required." });
-}
-
-// Accept BOTH formats:
-// TL###### OR TL######-######
-const ref = String(referenceId).trim().toUpperCase();
-
-const pattern = /^TL\d{6}(-\d{6})?$/;
-
-if (!pattern.test(ref)) {
-return res.json({
-ok: false,
-message: "Please enter a valid Reference ID from your Tax Lakay upload receipt."
-});
-}
-
-// VALID
-return res.json({ ok: true });
-
-} catch (err) {
-console.error("Validation error:", err);
-return res.json({ ok: false, message: "Server error validating Reference ID." });
-}
-});
-
 /* --------------------------- GOOGLE APPS SCRIPTS -------------------------- */
 /** MAIN UPLOAD LOG (Tax Lakay - Upload Log) */
 const UPLOAD_SHEET_URL =
@@ -312,6 +282,93 @@ fs.writeFileSync(LOG_FILE, header);
 }
 }
 ensureLogHeader();
+
+/* -------- Helper: CSV parsing + look up client by reference ID ------------ */
+function parseCsvLine(line) {
+const result = [];
+let cur = '';
+let inQuotes = false;
+for (let i = 0; i < line.length; i++) {
+const ch = line[i];
+if (ch === '"') {
+if (inQuotes && line[i + 1] === '"') {
+cur += '"';
+i++;
+} else {
+inQuotes = !inQuotes;
+}
+} else if (ch === ',' && !inQuotes) {
+result.push(cur);
+cur = '';
+} else {
+cur += ch;
+}
+}
+result.push(cur);
+return result;
+}
+
+function findClientByRef(ref) {
+try {
+if (!fs.existsSync(LOG_FILE)) return null;
+const raw = fs.readFileSync(LOG_FILE, 'utf8');
+const lines = raw.trim().split('\n');
+if (lines.length <= 1) return null;
+
+for (let i = lines.length - 1; i >= 1; i--) {
+const cols = parseCsvLine(lines[i]);
+const rowRef = (cols[1] || '').replace(/^"|"$/g, '');
+if (rowRef.toUpperCase() === ref.toUpperCase()) {
+const name = (cols[2] || '').replace(/^"|"$/g, '');
+const email = (cols[3] || '').replace(/^"|"$/g, '');
+const phone = (cols[4] || '').replace(/^"|"$/g, '');
+return { name, email, phone };
+}
+}
+return null;
+} catch (e) {
+console.error('findClientByRef failed:', e);
+return null;
+}
+}
+
+/* ------------------ VALIDATE REFERENCE ID (FRONT-END CHECK) -------------- */
+app.post('/api/validate-reference', express.json(), (req, res) => {
+try {
+const { referenceId } = req.body || {};
+if (!referenceId) {
+return res.json({ ok: false, message: "Reference ID is required." });
+}
+
+const ref = String(referenceId).trim().toUpperCase();
+
+// ✅ Correct format: TL + 6 digits (e.g., TL929402)
+const pattern = /^TL\d{6}$/;
+
+if (!pattern.test(ref)) {
+return res.json({
+ok: false,
+message: "Please enter a valid Reference ID from your Tax Lakay upload receipt."
+});
+}
+
+// ✅ Only accept IDs that actually exist in uploads_log.csv
+const match = findClientByRef(ref);
+if (!match) {
+return res.json({
+ok: false,
+message: "Unable to verify your Reference ID. Please double-check your upload receipt."
+});
+}
+
+// VALID
+return res.json({ ok: true, message: "Reference ID verified." });
+
+} catch (err) {
+console.error("Validation error:", err);
+return res.json({ ok: false, message: "Server error validating Reference ID." });
+}
+});
 
 /* ----------------------------- Multer conf -------------------------------- */
 const upload = multer({
@@ -1125,55 +1182,6 @@ return true;
 } catch (e) {
 console.error('writeProgress failed:', e);
 return false;
-}
-}
-
-/* -------- Helper: CSV parsing + look up client by reference ID ------------ */
-function parseCsvLine(line) {
-const result = [];
-let cur = '';
-let inQuotes = false;
-for (let i = 0; i < line.length; i++) {
-const ch = line[i];
-if (ch === '"') {
-if (inQuotes && line[i + 1] === '"') {
-cur += '"';
-i++;
-} else {
-inQuotes = !inQuotes;
-}
-} else if (ch === ',' && !inQuotes) {
-result.push(cur);
-cur = '';
-} else {
-cur += ch;
-}
-}
-result.push(cur);
-return result;
-}
-
-function findClientByRef(ref) {
-try {
-if (!fs.existsSync(LOG_FILE)) return null;
-const raw = fs.readFileSync(LOG_FILE, 'utf8');
-const lines = raw.trim().split('\n');
-if (lines.length <= 1) return null;
-
-for (let i = lines.length - 1; i >= 1; i--) {
-const cols = parseCsvLine(lines[i]);
-const rowRef = (cols[1] || '').replace(/^"|"$/g, '');
-if (rowRef.toUpperCase() === ref.toUpperCase()) {
-const name = (cols[2] || '').replace(/^"|"$/g, '');
-const email = (cols[3] || '').replace(/^"|"$/g, '');
-const phone = (cols[4] || '').replace(/^"|"$/g, '');
-return { name, email, phone };
-}
-}
-return null;
-} catch (e) {
-console.error('findClientByRef failed:', e);
-return null;
 }
 }
 
