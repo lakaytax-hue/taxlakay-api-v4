@@ -9,6 +9,37 @@ const { google } = require('googleapis');
 const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args));
 const app = express();
 
+/** ------------------ VALIDATE REFERENCE ID ------------------ */
+app.post('/api/validate-reference', express.json(), (req, res) => {
+try {
+const { referenceId } = req.body || {};
+
+if (!referenceId) {
+return res.json({ ok: false, message: "Reference ID is required." });
+}
+
+// Example: TL123456 or TL000001
+const ref = String(referenceId).trim();
+const pattern = /^TL\d{6,}$/;
+
+if (!pattern.test(ref)) {
+return res.json({
+ok: false,
+message: "Please enter a valid Reference ID from your Tax Lakay upload receipt."
+});
+}
+
+return res.json({ ok: true });
+
+} catch (err) {
+console.error("Validate Reference Error:", err);
+return res.json({
+ok: false,
+message: "Server error validating Reference ID."
+});
+}
+});
+
 /* --------------------------- GOOGLE APPS SCRIPTS -------------------------- */
 /** MAIN UPLOAD LOG (Tax Lakay - Upload Log) */
 const UPLOAD_SHEET_URL =
