@@ -510,7 +510,7 @@ language: lang,
 cashAdvance: cashAdvance || '', // ✅ NEW
 refundMethod: refundMethod || '', // ✅ NEW
 currentAddress: currentAddress || clientAddress || '' // ✅ NEW
-clientMessage: clientMessage || '' 
+clientMessage: clientMessage || '',
 };
 const r = await fetch(UPLOAD_SHEET_URL, {
 method: 'POST',
