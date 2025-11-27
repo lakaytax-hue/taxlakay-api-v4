@@ -102,11 +102,35 @@ return null;
 }
 
 async function uploadFilesToDrive(folderId, files, meta = {}) {
-if (!drive || !folderId || !Array.isArray(files) || files.length === 0) return;
+try {
+if (!drive) {
+console.warn('⚠️ Drive client not initialized, skipping Drive upload.');
+return;
+}
+if (!folderId) {
+console.warn('⚠️ No folderId provided for Drive upload.');
+return;
+}
+if (!Array.isArray(files) || files.length === 0) {
+console.warn('⚠️ No files passed to uploadFilesToDrive, nothing to upload.');
+return;
+}
+
+const stream = require('stream');
 
 for (const file of files) {
 try {
+if (!file || !file.buffer) {
+console.warn('⚠️ Skipping file with no buffer:', file && file.originalname);
+continue;
+}
+
 const fileName = sanitizeName(file.originalname) || 'document';
+
+// Create a readable stream from the in-memory buffer
+const bufferStream = new stream.PassThrough();
+bufferStream.end(file.buffer);
+
 const res = await drive.files.create({
 requestBody: {
 name: fileName,
@@ -116,17 +140,19 @@ meta.clientName || ''
 }, Email: ${meta.clientEmail || ''}`
 },
 media: {
-mimeType: file.mimetype,
-body: Buffer.isBuffer(file.buffer)
-? require('stream').Readable.from(file.buffer)
-: file.buffer
+mimeType: file.mimetype || 'application/octet-stream',
+body: bufferStream
 },
 fields: 'id, name'
 });
+
 console.log(`☁️ Uploaded to Drive: ${res.data.name} (${res.data.id})`);
 } catch (e) {
-console.error('❌ Failed to upload file to Drive:', e);
+console.error('❌ Failed to upload file to Drive (inside loop):', e);
 }
+}
+} catch (e) {
+console.error('❌ uploadFilesToDrive wrapper error:', e);
 }
 }
 
