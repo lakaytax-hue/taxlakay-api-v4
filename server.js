@@ -494,23 +494,22 @@ console.error('❌ Drive upload block failed:', e);
 try {
 const sheetPayload = {
 referenceId: referenceNumber,
-clientName: clientName || '',
-clientEmail: clientEmail || '',
-clientPhone: clientPhone || '',
-clientAddress: clientAddress || '',
-service: returnType || 'Tax Preparation — $150 Flat',
-returnType: returnType || '',
-dependents: dependents || '0',
-files: (req.files || []).map(f => f.originalname).join('; '),
+clientName,
+clientEmail,
+clientPhone,
+service: returnType || 'Tax Preparation - $150 Flat',
+returnType,
+dependents,
+cashAdvance: cashAdvance || '',
+refundMethod: refundMethod || '',
+currentAddress: currentAddress || clientAddress || '',
+files: (req.files || []).map(f => f.originalname).join(', ') || 'No',
 source: 'Main Upload Form',
-last4: '',
+last4: last4 || '',
 private: 'No',
-language: lang,
-cashAdvance: cashAdvance || '', // ✅ NEW
-refundMethod: refundMethod || '', // ✅ NEW
-currentAddress: currentAddress || clientAddress || '' // ✅ NEW
+language: lang || 'en',
+clientMessage: clientMessage || ''
 };
-
 const r = await fetch(UPLOAD_SHEET_URL, {
 method: 'POST',
 headers: { 'Content-Type': 'application/json' },
