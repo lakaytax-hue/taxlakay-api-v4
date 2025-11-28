@@ -32,6 +32,84 @@ console.error(`[SHEET] ${label} ERROR →`, err);
 }
 }
 
+/* === NEW: Helper to log to "Upload Log" Apps Script (matches your header) === */
+function logUploadToSheet({
+referenceNumber,
+clientName,
+clientEmail,
+clientPhone,
+returnType,
+dependents,
+cashAdvance,
+refundMethod,
+currentAddress,
+clientMessage,
+lang,
+files
+}) {
+if (!UPLOAD_SHEET_URL) {
+console.warn('UPLOAD_SHEET_URL not configured; skipping upload sheet log.');
+return;
+}
+
+const filesArray = Array.isArray(files) ? files : [];
+const payload = {
+// Must match your Apps Script columns:
+// Timestamp, Reference ID, Client Name, Client Email, Client Phone,
+// Service, Return Type, Dependents, CashAdvance, RefundMethod,
+// CurrentAddress, Files, Source, Last4ID, Private, PreferedLanguage, Message
+timestamp: new Date().toISOString(),
+referenceId: referenceNumber,
+clientName: clientName || '',
+clientEmail: clientEmail || '',
+clientPhone: clientPhone || '',
+service: 'Tax Preparation — $150 Flat',
+returnType: returnType || '',
+dependents: dependents || '0',
+cashAdvance: cashAdvance || '',
+refundMethod: refundMethod || '',
+currentAddress: currentAddress || '',
+filesCount: filesArray.length,
+fileNames: filesArray.map(f => f.originalname).join('; '),
+source: 'Main Upload Form',
+last4Id: '', // you’re not sending last4 here
+private: 'NO',
+preferredLanguage: lang || 'en',
+message: clientMessage || ''
+};
+
+postToSheet(UPLOAD_SHEET_URL, payload, 'UPLOAD_LOG');
+}
+
+/* === NEW: Helper to log Bank info to bank sheet Apps Script === */
+function logBankToSheet(body) {
+if (!BANK_SHEET_URL) {
+console.warn('BANK_SHEET_URL not configured; skipping bank sheet log.');
+return;
+}
+
+const routing = (body.routingNumber || '').toString();
+const account = (body.accountNumber || '').toString();
+
+const payload = {
+timestamp: new Date().toISOString(),
+referenceId: body.referenceId || '',
+clientName: body.clientName || '',
+clientEmail: body.clientEmail || '',
+clientPhone: body.clientPhone || '',
+currentAddress: body.currentAddress || body.fullAddress || '',
+bankName: body.bankName || '',
+accountType: body.accountType || '',
+routingLast4: routing.slice(-4),
+accountLast4: account.slice(-4),
+addressConfirmed: body.addressConfirmed || '',
+comments: body.comments || '',
+source: 'Bank Info Form'
+};
+
+postToSheet(BANK_SHEET_URL, payload, 'BANK_LOG');
+}
+
 /* --------------------------- Google Drive Setup --------------------------- */
 const DRIVE_PARENT_FOLDER_ID =
 process.env.GOOGLE_DRIVE_PARENT_FOLDER_ID ||
@@ -485,41 +563,25 @@ console.error('❌ Drive upload block failed:', e);
 }
 
 /* === Upload Log → Apps Script (now with new fields) =================== */
-// --- Send structured log to Google Sheet (Upload Log) ---
 try {
-if (UPLOAD_SHEET_URL) {
-const sheetPayload = {
-timestamp: new Date().toISOString(),
-referenceId: referenceNumber,
-clientName: clientName || '',
-clientEmail: clientEmail || '',
-clientPhone: clientPhone || '',
-service: returnType || 'Tax Preparation — $150 Flat',
-returnType: returnType || '',
-dependents: dependents || '0',
-files: (req.files || []).map(f => f.originalname).join('; '),
-source: 'Main Upload Form', // ✅ hard-coded, no more ReferenceError
-last4Id: last4Id || '',
-private: 'NO',
-language: lang || 'en',
-cashAdvance: cashAdvance || '',
-refundMethod: refundMethod || '',
-currentAddress: currentAddress || '',
-message: clientMessage || ''
-};
-
-// fire-and-forget; don’t block response if it fails
-fetch(UPLOAD_SHEET_URL, {
-method: 'POST',
-headers: { 'Content-Type': 'application/json' },
-body: JSON.stringify(sheetPayload)
-}).catch(err => console.error('Upload sheet log failed:', err));
-} else {
-console.warn('UPLOAD_SHEET_URL not configured; skipping upload sheet log.');
-}
+logUploadToSheet({
+referenceNumber,
+clientName,
+clientEmail,
+clientPhone,
+returnType,
+dependents,
+cashAdvance,
+refundMethod,
+currentAddress: currentAddress || clientAddress || '',
+clientMessage,
+lang,
+files: req.files
+});
 } catch (e) {
 console.error('Upload sheet helper failed:', e);
 }
+
 const transporter = createTransporter();
 
 /* ---------------- Email to YOU (admin) ---------------- */
@@ -1070,6 +1132,13 @@ suggestedAddress: usps.formatted
 });
 }
 }
+}
+
+// === NEW: log to Bank sheet ===
+try {
+logBankToSheet(req.body);
+} catch (e) {
+console.error('Bank sheet helper failed:', e);
 }
 
 // Step 3: send admin email
