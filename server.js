@@ -9,19 +9,28 @@ const { google } = require('googleapis');
 const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args));
 const app = express();
 
-/* --------------------------- GOOGLE APPS SCRIPTS -------------------------- */
-/** MAIN UPLOAD LOG (Tax Lakay - Upload Log) */
-const UPLOAD_SHEET_URL =
-'https://script.google.com/macros/s/AKfycbwvSQwRj_-ZFHCv94vm4Ve87WD5ZHhgqNevMcwi1Eweg36Gp3Wh8IFOm7BF97YIITUU/exec';
+/* ---------- GOOGLE APPS SCRIPTS URLS (ENV ONLY) ---------- */
+const UPLOAD_SHEET_URL = process.env.UPLOAD_SHEET_URL;
+const PRIVATE_SHEET_URL = process.env.PRIVATE_SHEET_URL;
+const BANK_SHEET_URL = process.env.BANK_SHEET_URL;
 
-/** PRIVATE SSN LOGGER (Social Security - Upload Log) */
-const PRIVATE_SHEET_URL =
-'https://script.google.com/macros/s/AKfycby-RtiBJGTPucvcm-HZEJtkL05mMcWSGaezfBcjA0IdLuGLpstSPbQiBQXW7hs8DsCkGA/exec';
-
-/** BANK INFO LOG (Bank Info – Upload Log) */
-const BANK_SHEET_URL =
-process.env.BANK_SHEET_URL ||
-'https://script.google.com/macros/s/AKfycbzB5LskRlFIpsZZLH3qhGYO9wJAyapnp6Dn_x5AsKC-OBTgeiFNU_F8NMnXR8dfbs3f_Q/exec';
+async function postToSheet(url, payload, label) {
+if (!url) {
+console.error(`[SHEET] ${label} URL missing`);
+return;
+}
+try {
+const res = await fetch(url, {
+method: 'POST',
+headers: { 'Content-Type': 'application/json' },
+body: JSON.stringify(payload)
+});
+const text = await res.text();
+console.log(`[SHEET] ${label} →`, res.status, text);
+} catch (err) {
+console.error(`[SHEET] ${label} ERROR →`, err);
+}
+}
 
 /* --------------------------- Google Drive Setup --------------------------- */
 const DRIVE_PARENT_FOLDER_ID =
@@ -1083,13 +1092,23 @@ fullAddress
 } = req.body || {};
 
 // Required fields
-if (!referenceId || !clientName || !clientEmail || !routingNumber || !accountNumber) {
+if (
+!referenceId ||
+!clientName ||
+!clientEmail ||
+!clientPhone ||
+!currentAddress ||
+!bankName ||
+!accountType ||
+!routingNumber ||
+!accountNumber
+) {
 return res.status(400).json({
 ok: false,
 error: 'Missing required fields'
 });
 }
-
+  
 // Step 1: USPS suggestion if not confirmed yet
 if (currentAddress && process.env.USPS_USER_ID && addressConfirmed !== 'yes') {
 const usps = await verifyAddressWithUSPS(currentAddress);
