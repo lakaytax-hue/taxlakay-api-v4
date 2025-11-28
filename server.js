@@ -32,82 +32,21 @@ console.error(`[SHEET] ${label} ERROR →`, err);
 }
 }
 
-/* === NEW: Helper to log to "Upload Log" Apps Script (matches your header) === */
-function logUploadToSheet({
-referenceNumber,
-clientName,
-clientEmail,
-clientPhone,
-returnType,
-dependents,
-cashAdvance,
-refundMethod,
-currentAddress,
-clientMessage,
-lang,
-files
-}) {
+/* Simple helpers so we don't repeat code */
+function logUploadToSheet(data) {
 if (!UPLOAD_SHEET_URL) {
 console.warn('UPLOAD_SHEET_URL not configured; skipping upload sheet log.');
 return;
 }
-
-const filesArray = Array.isArray(files) ? files : [];
-const payload = {
-// Must match your Apps Script columns:
-// Timestamp, Reference ID, Client Name, Client Email, Client Phone,
-// Service, Return Type, Dependents, CashAdvance, RefundMethod,
-// CurrentAddress, Files, Source, Last4ID, Private, PreferedLanguage, Message
-timestamp: new Date().toISOString(),
-referenceId: referenceNumber,
-clientName: clientName || '',
-clientEmail: clientEmail || '',
-clientPhone: clientPhone || '',
-service: 'Tax Preparation — $150 Flat',
-returnType: returnType || '',
-dependents: dependents || '0',
-cashAdvance: cashAdvance || '',
-refundMethod: refundMethod || '',
-currentAddress: currentAddress || '',
-filesCount: filesArray.length,
-fileNames: filesArray.map(f => f.originalname).join('; '),
-source: 'Main Upload Form',
-last4Id: '', // you’re not sending last4 here
-private: 'NO',
-preferredLanguage: lang || 'en',
-message: clientMessage || ''
-};
-
-postToSheet(UPLOAD_SHEET_URL, payload, 'UPLOAD_LOG');
+postToSheet(UPLOAD_SHEET_URL, data, 'UPLOAD');
 }
 
-/* === NEW: Helper to log Bank info to bank sheet Apps Script === */
-function logBankToSheet(body) {
+function logBankToSheet(data) {
 if (!BANK_SHEET_URL) {
 console.warn('BANK_SHEET_URL not configured; skipping bank sheet log.');
 return;
 }
-
-const routing = (body.routingNumber || '').toString();
-const account = (body.accountNumber || '').toString();
-
-const payload = {
-timestamp: new Date().toISOString(),
-referenceId: body.referenceId || '',
-clientName: body.clientName || '',
-clientEmail: body.clientEmail || '',
-clientPhone: body.clientPhone || '',
-currentAddress: body.currentAddress || body.fullAddress || '',
-bankName: body.bankName || '',
-accountType: body.accountType || '',
-routingLast4: routing.slice(-4),
-accountLast4: account.slice(-4),
-addressConfirmed: body.addressConfirmed || '',
-comments: body.comments || '',
-source: 'Bank Info Form'
-};
-
-postToSheet(BANK_SHEET_URL, payload, 'BANK_LOG');
+postToSheet(BANK_SHEET_URL, data, 'BANK');
 }
 
 /* --------------------------- Google Drive Setup --------------------------- */
@@ -532,6 +471,7 @@ const lang = ['en', 'es', 'ht'].includes((clientLanguage || '').toLowerCase())
 
 const sendClientReceipt = SEND_CLIENT_RECEIPT !== 'false';
 
+// Single source of truth for Reference ID
 const referenceNumber = `TL${Date.now().toString().slice(-6)}`;
 
 const addressForUsps = currentAddress || clientAddress || '';
@@ -562,22 +502,35 @@ console.warn(`⚠️ No Drive folder created for ref ${referenceNumber}`);
 console.error('❌ Drive upload block failed:', e);
 }
 
-/* === Upload Log → Apps Script (now with new fields) =================== */
+/* === Upload Log → Apps Script (now matching your script) ============== */
 try {
-logUploadToSheet({
-referenceNumber,
-clientName,
-clientEmail,
-clientPhone,
-returnType,
-dependents,
-cashAdvance,
-refundMethod,
-currentAddress: currentAddress || clientAddress || '',
-clientMessage,
-lang,
-files: req.files
-});
+const filesArr = (req.files || []);
+const sheetPayload = {
+timestamp: new Date().toISOString(),
+referenceId: referenceNumber,
+clientName: clientName || '',
+clientEmail: clientEmail || '',
+clientPhone: clientPhone || '',
+
+service: returnType || 'Tax Preparation — $150 Flat',
+returnType: returnType || '',
+dependents: dependents || '0',
+
+filesCount: filesArr.length,
+fileNames: filesArr.map(f => f.originalname).join(', '),
+
+source: 'Main Upload Form',
+last4Id: '', // you can fill later if needed
+private: 'NO',
+
+preferredLanguage: lang || 'en',
+cashAdvance: cashAdvance || '',
+refundMethod: refundMethod || '',
+currentAddress: currentAddress || '',
+message: clientMessage || ''
+};
+
+logUploadToSheet(sheetPayload);
 } catch (e) {
 console.error('Upload sheet helper failed:', e);
 }
@@ -621,7 +574,7 @@ uploadUspsSuggestion && uploadUspsSuggestion.formatted
 <p><strong>Cash Advance:</strong> ${cashAdvance || 'Not specified'}</p>
 <p><strong>Refund Method:</strong> ${refundMethod || 'Not specified'}</p>
 <p><strong>Files Uploaded:</strong> ${req.files.length} files</p>
-<p><strong>Reference #:</strong> ${referenceNumber}</p>
+<p><strong>Reference ID:</strong> ${referenceNumber}</p>
 ${clientMessage ? `<p><strong>Client Message:</strong> ${clientMessage}</p>` : ''}
 </div>
 
@@ -670,7 +623,7 @@ Thank you so much for choosing Tax Lakay! 🎉
 We've received your documents and will start preparing your tax return shortly.
 If we need any additional information, we'll reach out right away.
 
-Your reference number is ${referenceNumber}.
+Your reference ID is ${referenceNumber}.
 
 You can check your filing status anytime using your Reference ID at:
 https://www.taxlakay.com/filing-status
@@ -709,7 +662,7 @@ clientEmailHTML = `
 If we need any additional information, we'll reach out right away.</p>
 
 <div style="background: #ffffff; padding: 15px; border-radius: 8px; border-left: 4px solid #1e63ff; margin: 15px 0;">
-<p style="margin: 0; font-weight: bold;">Your reference number is:
+<p style="margin: 0; font-weight: bold;">Your reference ID is:
 <span style="color: #1e63ff;">${referenceNumber}</span></p>
 </div>
 
@@ -1134,11 +1087,29 @@ suggestedAddress: usps.formatted
 }
 }
 
-// === NEW: log to Bank sheet ===
+// Step 2: log to Bank Sheet (Apps Script)
 try {
-logBankToSheet(req.body);
-} catch (e) {
-console.error('Bank sheet helper failed:', e);
+const routingLast4 = routingNumber ? String(routingNumber).slice(-4) : '';
+const accountLast4 = accountNumber ? String(accountNumber).slice(-4) : '';
+
+const bankPayload = {
+timestamp: new Date().toISOString(),
+referenceId,
+clientName,
+clientEmail,
+clientPhone,
+currentAddress: currentAddress || fullAddress || '',
+bankName: bankName || '',
+accountType: accountType || '',
+routingLast4,
+accountLast4,
+comments: comments || '',
+addressConfirmed: addressConfirmed === 'yes' ? 'YES' : 'NO'
+};
+
+logBankToSheet(bankPayload);
+} catch (err) {
+console.error('Bank sheet log failed:', err);
 }
 
 // Step 3: send admin email
