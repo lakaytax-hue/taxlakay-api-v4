@@ -1072,6 +1072,14 @@ return res.status(500).json({ ok: false, error: 'Server error' });
 });
 
 /* ------------------------ BANK INFO (PRIVATE PAGE) ------------------------ */
+/**
+* Receives submissions from your Bank Information form:
+* POST /api/bank-info
+*
+* - USPS verifies address and suggests correction (if addressConfirmed !== 'yes')
+* - Logs to BANK_SHEET_URL (Apps Script)
+* - Sends admin email (masked routing/account)
+*/
 app.post('/api/bank-info', async (req, res) => {
 try {
 const {
@@ -1090,24 +1098,14 @@ fullAddress
 } = req.body || {};
 
 // Required fields
-if (
-!referenceId ||
-!clientName ||
-!clientEmail ||
-!clientPhone ||
-!currentAddress ||
-!bankName ||
-!accountType ||
-!routingNumber ||
-!accountNumber
-) {
+if (!referenceId || !clientName || !clientEmail || !routingNumber || !accountNumber) {
 return res.status(400).json({
 ok: false,
 error: 'Missing required fields'
 });
 }
-  
-// Step 1: USPS suggestion if not confirmed yet
+
+// ---------------- STEP 1: USPS suggestion if not confirmed yet ----------
 if (currentAddress && process.env.USPS_USER_ID && addressConfirmed !== 'yes') {
 const usps = await verifyAddressWithUSPS(currentAddress);
 if (usps && usps.formatted) {
@@ -1123,7 +1121,49 @@ suggestedAddress: usps.formatted
 }
 }
 
-// Step 3: send admin email
+// ---------------- STEP 2: log to Bank sheet (Apps Script) ---------------
+try {
+if (BANK_SHEET_URL) {
+const routingLast4 = String(routingNumber || '').slice(-4);
+const accountLast4 = String(accountNumber || '').slice(-4);
+
+const payload = {
+referenceId,
+clientName,
+clientEmail,
+clientPhone: clientPhone || '',
+currentAddress: currentAddress || '',
+bankName: bankName || '',
+accountType: accountType || '',
+routingNumber: routingLast4, // sheet column = last 4
+accountNumber: accountLast4, // sheet column = last 4
+comments: comments || '',
+source: 'Bank Info Form',
+addressConfirmed: addressConfirmed || '',
+fullAddress: fullAddress || currentAddress || ''
+};
+
+const r = await fetch(BANK_SHEET_URL, {
+method: 'POST',
+headers: { 'Content-Type': 'application/json' },
+body: JSON.stringify(payload)
+});
+
+const j = await r.json().catch(() => ({}));
+if (!r.ok || j.ok === false) {
+console.error('❌ BANK_SHEET_URL logger error:', j && j.error);
+} else {
+console.log('✅ Row logged to Bank Info sheet');
+}
+} else {
+console.warn('⚠️ BANK_SHEET_URL not configured; skipping bank log.');
+}
+} catch (logErr) {
+console.error('❌ Failed calling BANK_SHEET_URL:', logErr);
+}
+
+// ---------------- STEP 3: send admin email ------------------------------
+try {
 const mask = v => (v ? String(v).replace(/.(?=.{4})/g, '*') : '');
 const maskedRouting = mask(routingNumber);
 const maskedAccount = mask(accountNumber);
@@ -1170,7 +1210,7 @@ clientPhone
 ? `<a href="tel:${clientPhone.replace(/[^0-9+]/g, '')}" style="color:#1e63ff;">${clientPhone}</a>`
 : 'N/A'
 }</p>
-<p style="margin:4px 0;"><strong>Address:</strong> ${currentAddress}</p>
+<p style="margin:4px 0;"><strong>Address:</strong> ${currentAddress || 'N/A'}</p>
 </div>
 
 <div style="background:#ecfdf5;border-radius:8px;padding:14px 16px;margin-bottom:12px;">
@@ -1202,10 +1242,14 @@ html
 });
 
 console.log('✅ Bank info admin email sent to', adminTo);
+} catch (mailErr) {
+console.error('❌ Bank info email error:', mailErr);
+}
 
+// ---------------- FINAL RESPONSE TO FRONTEND ---------------------------
 return res.json({ ok: true, message: 'Bank info received securely.' });
-} catch (e) {
-console.error('bank-info error:', e);
+} catch (error) {
+console.error('bank-info error:', error);
 return res.status(500).json({ ok: false, error: 'Server error' });
 }
 });
