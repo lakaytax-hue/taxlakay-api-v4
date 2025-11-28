@@ -111,35 +111,11 @@ return null;
 }
 
 async function uploadFilesToDrive(folderId, files, meta = {}) {
-try {
-if (!drive) {
-console.warn('⚠️ Drive client not initialized, skipping Drive upload.');
-return;
-}
-if (!folderId) {
-console.warn('⚠️ No folderId provided for Drive upload.');
-return;
-}
-if (!Array.isArray(files) || files.length === 0) {
-console.warn('⚠️ No files passed to uploadFilesToDrive, nothing to upload.');
-return;
-}
-
-const stream = require('stream');
+if (!drive || !folderId || !Array.isArray(files) || files.length === 0) return;
 
 for (const file of files) {
 try {
-if (!file || !file.buffer) {
-console.warn('⚠️ Skipping file with no buffer:', file && file.originalname);
-continue;
-}
-
 const fileName = sanitizeName(file.originalname) || 'document';
-
-// Create a readable stream from the in-memory buffer
-const bufferStream = new stream.PassThrough();
-bufferStream.end(file.buffer);
-
 const res = await drive.files.create({
 requestBody: {
 name: fileName,
@@ -149,19 +125,17 @@ meta.clientName || ''
 }, Email: ${meta.clientEmail || ''}`
 },
 media: {
-mimeType: file.mimetype || 'application/octet-stream',
-body: bufferStream
+mimeType: file.mimetype,
+body: Buffer.isBuffer(file.buffer)
+? require('stream').Readable.from(file.buffer)
+: file.buffer
 },
 fields: 'id, name'
 });
-
 console.log(`☁️ Uploaded to Drive: ${res.data.name} (${res.data.id})`);
 } catch (e) {
-console.error('❌ Failed to upload file to Drive (inside loop):', e);
+console.error('❌ Failed to upload file to Drive:', e);
 }
-}
-} catch (e) {
-console.error('❌ uploadFilesToDrive wrapper error:', e);
 }
 }
 
@@ -448,34 +422,87 @@ const ok = !!expected && token === expected;
 res.json({ ok });
 });
 
-// === Payload for "Tax Lakay - Upload Log" sheet ============================
+/* ------------------------------ Upload API -------------------------------- */
+app.post('/api/upload', upload.any(), async (req, res) => {
 try {
-// Safe helper values so nothing is undefined:
-const serviceValue = returnType || 'Tax Preparation — $150 Flat';
-const filesSummary = (req.files || []).map(f => f.originalname).join('; ');
-const sourceValue = 'Main Upload Form'; // fixed text
-const last4Value = ''; // upload form does NOT send SSN
-const isPrivateValue = 'No'; // this sheet is only for normal uploads
-const languageValue = lang; // from clientLanguage above
+console.log('📨 Upload request received');
+console.log('Files:', req.files ? req.files.length : 0);
+console.log('Body:', req.body);
 
+if (!req.files || req.files.length === 0) {
+return res.status(400).json({ ok: false, error: 'No files uploaded' });
+}
+
+const {
+clientName,
+clientEmail,
+clientPhone,
+clientAddress, // legacy field
+currentAddress, // NEW preferred field
+returnType,
+dependents,
+clientMessage,
+SEND_CLIENT_RECEIPT,
+clientLanguage,
+cashAdvance, // NEW
+refundMethod // NEW
+} = req.body;
+
+const lang = ['en', 'es', 'ht'].includes((clientLanguage || '').toLowerCase())
+? clientLanguage.toLowerCase()
+: 'en';
+
+const sendClientReceipt = SEND_CLIENT_RECEIPT !== 'false';
+
+const referenceNumber = `TL${Date.now().toString().slice(-6)}`;
+
+const addressForUsps = currentAddress || clientAddress || '';
+
+/* === Optional USPS validate for upload address (admin info only) ===== */
+let uploadUspsSuggestion = null;
+try {
+if (addressForUsps && process.env.USPS_USER_ID) {
+uploadUspsSuggestion = await verifyAddressWithUSPS(addressForUsps);
+}
+} catch (e) {
+console.error('❌ USPS validation for upload form failed:', e);
+}
+
+/* === Google Drive upload (non-blocking on failure) ==================== */
+try {
+const folderId = await ensureClientFolder(referenceNumber, clientName, clientPhone);
+if (folderId) {
+await uploadFilesToDrive(folderId, req.files, {
+ref: referenceNumber,
+clientName,
+clientEmail
+});
+} else {
+console.warn(`⚠️ No Drive folder created for ref ${referenceNumber}`);
+}
+} catch (e) {
+console.error('❌ Drive upload block failed:', e);
+}
+
+/* === Upload Log → Apps Script (now with new fields) =================== */
+try {
 const sheetPayload = {
-referenceId: referenceNumber, // B
-clientName: clientName || '', // C
-clientEmail: clientEmail || '', // D
-clientPhone: clientPhone || '', // E
-service: serviceValue, // F
-returnType: returnType || '', // G
-dependents: dependents || '0', // H
-cashAdvance: cashAdvance || '', // I
-refundMethod: refundMethod || '', // J
-currentAddress: currentAddress || clientAddress || '', // K
-
-files: filesSummary || '', // L
-source: sourceValue, // M
-last4: last4Value, // N
-private: isPrivateValue, // O
-language: languageValue || '', // P
-clientMessage: clientMessage || '' // Q
+referenceId: referenceNumber,
+clientName: clientName || '',
+clientEmail: clientEmail || '',
+clientPhone: clientPhone || '',
+clientAddress: clientAddress || '',
+service: returnType || 'Tax Preparation — $150 Flat',
+returnType: returnType || '',
+dependents: dependents || '0',
+files: (req.files || []).map(f => f.originalname).join('; '),
+source: 'Main Upload Form',
+last4: '',
+private: 'No',
+language: lang,
+cashAdvance: cashAdvance || '', // ✅ NEW
+refundMethod: refundMethod || '', // ✅ NEW
+currentAddress: currentAddress || clientAddress || '' // ✅ NEW
 };
 
 const r = await fetch(UPLOAD_SHEET_URL, {
@@ -484,17 +511,17 @@ headers: { 'Content-Type': 'application/json' },
 body: JSON.stringify(sheetPayload)
 });
 
-const textSheet = await r.text();
-console.log('[UPLOAD SHEET]', r.status, textSheet);
-
-// optional: if Apps Script returns JSON, you can parse it:
-// let j = {};
-// try { j = JSON.parse(textSheet); } catch (_) {}
-// if (!r.ok || j.ok === false) console.error('❌ Upload Sheet logger error:', j.error);
-
+const j = await r.json().catch(() => ({}));
+if (!r.ok || (j && j.ok === false)) {
+console.error('❌ Upload Sheet logger error:', j && j.error);
+} else {
+console.log('✅ Row logged to Tax Lakay - Upload Log');
+}
 } catch (e) {
 console.error('❌ Failed calling Upload Sheet logger:', e);
 }
+
+const transporter = createTransporter();
 
 /* ---------------- Email to YOU (admin) ---------------- */
 const adminTo =
@@ -1005,14 +1032,6 @@ return res.status(500).json({ ok: false, error: 'Server error' });
 });
 
 /* ------------------------ BANK INFO (PRIVATE PAGE) ------------------------ */
-/**
-* Receives submissions from your Bank Information form:
-* POST /api/bank-info
-*
-* - USPS verifies address and suggests correction (if addressConfirmed !== 'yes')
-* - Logs to BANK_SHEET_URL (Apps Script)
-* - Sends admin email (masked routing/account)
-*/
 app.post('/api/bank-info', async (req, res) => {
 try {
 const {
@@ -1038,7 +1057,7 @@ error: 'Missing required fields'
 });
 }
 
-// ---------------- STEP 1: USPS suggestion if not confirmed yet ----------
+// Step 1: USPS suggestion if not confirmed yet
 if (currentAddress && process.env.USPS_USER_ID && addressConfirmed !== 'yes') {
 const usps = await verifyAddressWithUSPS(currentAddress);
 if (usps && usps.formatted) {
@@ -1054,49 +1073,7 @@ suggestedAddress: usps.formatted
 }
 }
 
-// ---------------- STEP 2: log to Bank sheet (Apps Script) ---------------
-try {
-if (BANK_SHEET_URL) {
-const routingLast4 = String(routingNumber || '').slice(-4);
-const accountLast4 = String(accountNumber || '').slice(-4);
-
-const payload = {
-referenceId,
-clientName,
-clientEmail,
-clientPhone: clientPhone || '',
-currentAddress: currentAddress || '',
-bankName: bankName || '',
-accountType: accountType || '',
-routingNumber: routingLast4, // sheet column = last 4
-accountNumber: accountLast4, // sheet column = last 4
-comments: comments || '',
-source: 'Bank Info Form',
-addressConfirmed: addressConfirmed || '',
-fullAddress: fullAddress || currentAddress || ''
-};
-
-const r = await fetch(BANK_SHEET_URL, {
-method: 'POST',
-headers: { 'Content-Type': 'application/json' },
-body: JSON.stringify(payload)
-});
-
-const j = await r.json().catch(() => ({}));
-if (!r.ok || j.ok === false) {
-console.error('❌ BANK_SHEET_URL logger error:', j && j.error);
-} else {
-console.log('✅ Row logged to Bank Info sheet');
-}
-} else {
-console.warn('⚠️ BANK_SHEET_URL not configured; skipping bank log.');
-}
-} catch (logErr) {
-console.error('❌ Failed calling BANK_SHEET_URL:', logErr);
-}
-
-// ---------------- STEP 3: send admin email ------------------------------
-try {
+// Step 3: send admin email
 const mask = v => (v ? String(v).replace(/.(?=.{4})/g, '*') : '');
 const maskedRouting = mask(routingNumber);
 const maskedAccount = mask(accountNumber);
@@ -1143,7 +1120,7 @@ clientPhone
 ? `<a href="tel:${clientPhone.replace(/[^0-9+]/g, '')}" style="color:#1e63ff;">${clientPhone}</a>`
 : 'N/A'
 }</p>
-<p style="margin:4px 0;"><strong>Address:</strong> ${currentAddress || 'N/A'}</p>
+<p style="margin:4px 0;"><strong>Address:</strong> ${currentAddress}</p>
 </div>
 
 <div style="background:#ecfdf5;border-radius:8px;padding:14px 16px;margin-bottom:12px;">
@@ -1175,14 +1152,10 @@ html
 });
 
 console.log('✅ Bank info admin email sent to', adminTo);
-} catch (mailErr) {
-console.error('❌ Bank info email error:', mailErr);
-}
 
-// ---------------- FINAL RESPONSE TO FRONTEND ---------------------------
 return res.json({ ok: true, message: 'Bank info received securely.' });
-} catch (error) {
-console.error('bank-info error:', error);
+} catch (e) {
+console.error('bank-info error:', e);
 return res.status(500).json({ ok: false, error: 'Server error' });
 }
 });
