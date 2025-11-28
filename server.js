@@ -485,42 +485,42 @@ console.error('❌ Drive upload block failed:', e);
 }
 
 /* === Upload Log → Apps Script (now with new fields) =================== */
+// --- Send structured log to Google Sheet (Upload Log) --------------------
 try {
+if (UPLOAD_SHEET_URL) {
 const sheetPayload = {
+timestamp: new Date().toISOString(),
 referenceId: referenceNumber,
 clientName: clientName || '',
 clientEmail: clientEmail || '',
 clientPhone: clientPhone || '',
-clientAddress: clientAddress || '',
-service: returnType || 'Tax Preparation — $150 Flat',
+service: returnType || '',
 returnType: returnType || '',
-dependents: dependents || '0',
-files: (req.files || []).map(f => f.originalname).join('; '),
-source: 'Main Upload Form',
-last4: '',
-private: 'No',
-language: lang,
-cashAdvance: cashAdvance || '', // ✅ NEW
-refundMethod: refundMethod || '', // ✅ NEW
-currentAddress: currentAddress || clientAddress || '' // ✅ NEW
+dependents: dependents || '',
+cashAdvance: cashAdvance || '',
+refundMethod: refundMethod || '',
+currentAddress: currentAddress || '',
+filesCount: (req.files || []).length,
+fileNames: (req.files || []).map(f => f.originalname).join('; '),
+source: source || 'Main Upload Form',
+last4Id: '', // filled later from SSN form
+private: '', // reserved
+preferredLanguage: clientLanguage || '',
+message: clientMessage || ''
 };
 
-const r = await fetch(UPLOAD_SHEET_URL, {
+// fire-and-forget; don't block the response if it fails
+fetch(UPLOAD_SHEET_URL, {
 method: 'POST',
 headers: { 'Content-Type': 'application/json' },
 body: JSON.stringify(sheetPayload)
-});
-
-const j = await r.json().catch(() => ({}));
-if (!r.ok || (j && j.ok === false)) {
-console.error('❌ Upload Sheet logger error:', j && j.error);
+}).catch(err => console.error('Upload sheet log failed:', err));
 } else {
-console.log('✅ Row logged to Tax Lakay - Upload Log');
+console.warn('UPLOAD_SHEET_URL not configured; skipping upload sheet log.');
 }
 } catch (e) {
-console.error('❌ Failed calling Upload Sheet logger:', e);
+console.error('Upload sheet helper failed:', e);
 }
-
 const transporter = createTransporter();
 
 /* ---------------- Email to YOU (admin) ---------------- */
