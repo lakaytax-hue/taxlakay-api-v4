@@ -485,7 +485,7 @@ console.error('❌ Drive upload block failed:', e);
 }
 
 /* === Upload Log → Apps Script (now with new fields) =================== */
-// --- Send structured log to Google Sheet (Upload Log) --------------------
+// --- Send structured log to Google Sheet (Upload Log) ---
 try {
 if (UPLOAD_SHEET_URL) {
 const sheetPayload = {
@@ -494,22 +494,21 @@ referenceId: referenceNumber,
 clientName: clientName || '',
 clientEmail: clientEmail || '',
 clientPhone: clientPhone || '',
-service: returnType || '',
+service: returnType || 'Tax Preparation — $150 Flat',
 returnType: returnType || '',
-dependents: dependents || '',
+dependents: dependents || '0',
+files: (req.files || []).map(f => f.originalname).join('; '),
+source: 'Main Upload Form', // ✅ hard-coded, no more ReferenceError
+last4Id: last4Id || '',
+private: 'NO',
+language: lang || 'en',
 cashAdvance: cashAdvance || '',
 refundMethod: refundMethod || '',
 currentAddress: currentAddress || '',
-filesCount: (req.files || []).length,
-fileNames: (req.files || []).map(f => f.originalname).join('; '),
-source: source || 'Main Upload Form',
-last4Id: '', // filled later from SSN form
-private: '', // reserved
-preferredLanguage: clientLanguage || '',
 message: clientMessage || ''
 };
 
-// fire-and-forget; don't block the response if it fails
+// fire-and-forget; don’t block response if it fails
 fetch(UPLOAD_SHEET_URL, {
 method: 'POST',
 headers: { 'Content-Type': 'application/json' },
