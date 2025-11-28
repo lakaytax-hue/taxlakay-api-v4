@@ -449,7 +449,7 @@ res.json({ ok });
 });
 
 /* ------------------------------ Upload API -------------------------------- */
-app.post('/api/upload', upload.any(), async (req, res) => {
+app.post('/api/upload', upload.array('files', 20), async (req, res) => {
 try {
 console.log('📨 Upload request received');
 console.log('Files:', req.files ? req.files.length : 0);
@@ -525,28 +525,26 @@ console.warn(`⚠️ No Drive folder created for ref ${referenceNumber}`);
 console.error('❌ Drive upload block failed:', e);
 }
   
-/* === Upload Log → Apps Script (now with new fields) =================== */
-try {
-const last4 = "";
+// === Payload for "Tax Lakay - Upload Log" sheet ===
 const sheetPayload = {
-referenceId: referenceNumber,
-clientName: clientName || '',
-clientEmail: clientEmail || '',
-clientPhone: clientPhone || '',
-clientAddress: clientAddress || '',
-service: returnType || 'Tax Preparation — $150 Flat',
-returnType: returnType || '',
-dependents: dependents || '0',
-files: (req.files || []).map(f => f.originalname).join('; '),
-source: 'Main Upload Form',
-last4: '',
-private: 'No',
-language: lang,
-cashAdvance: cashAdvance || '', // ✅ NEW
-refundMethod: refundMethod || '', // ✅ NEW
-currentAddress: currentAddress || clientAddress || '', // ✅ NEW
-clientMessage: clientMessage || '' // ✅ FIXED — comma before this line
+referenceId: referenceNumber, // column B
+clientName, // C
+clientEmail, // D
+clientPhone, // E
+service, // F
+returnType, // G
+dependents, // H
+cashAdvance, // I (what you choose on the form)
+refundMethod, // J
+currentAddress, // K
+files: filesSummary, // L (W-2, 1099, etc. or "No")
+source, // M
+last4, // N
+private: isPrivate, // O
+language, // P
+clientMessage // Q
 };
+
 const r = await fetch(UPLOAD_SHEET_URL, {
 method: 'POST',
 headers: { 'Content-Type': 'application/json' },
