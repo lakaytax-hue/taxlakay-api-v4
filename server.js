@@ -448,101 +448,34 @@ const ok = !!expected && token === expected;
 res.json({ ok });
 });
 
-/* ------------------------------ Upload API -------------------------------- */
-app.post('/api/upload', upload.array('files', 20), async (req, res) => {
+// === Payload for "Tax Lakay - Upload Log" sheet ============================
 try {
-console.log('📨 Upload request received');
-console.log('Files:', req.files ? req.files.length : 0);
-console.log('Body:', req.body);
+// Safe helper values so nothing is undefined:
+const serviceValue = returnType || 'Tax Preparation — $150 Flat';
+const filesSummary = (req.files || []).map(f => f.originalname).join('; ');
+const sourceValue = 'Main Upload Form'; // fixed text
+const last4Value = ''; // upload form does NOT send SSN
+const isPrivateValue = 'No'; // this sheet is only for normal uploads
+const languageValue = lang; // from clientLanguage above
 
-if (!req.files || req.files.length === 0) {
-return res.status(400).json({ ok: false, error: 'No files uploaded' });
-}
-
-const {
-clientName,
-clientEmail,
-clientPhone,
-clientAddress, // legacy field
-currentAddress, // NEW preferred field
-returnType,
-dependents,
-clientMessage,
-SEND_CLIENT_RECEIPT,
-clientLanguage,
-cashAdvance, // NEW
-refundMethod // NEW
-} = req.body;
-
-const lang = ['en', 'es', 'ht'].includes((clientLanguage || '').toLowerCase())
-? clientLanguage.toLowerCase()
-: 'en';
-
-const sendClientReceipt = SEND_CLIENT_RECEIPT !== 'false';
-
-const referenceNumber = `TL${Date.now().toString().slice(-6)}`;
-
-// === Optional USPS validate for upload address (customer-facing + admin) ===
-const addressForUsps = currentAddress || clientAddress || '';
-const addressConfirmed = (req.body.addressConfirmed || '').toLowerCase();
-let uploadUspsSuggestion = null;
-
-// Step 1: if USPS is configured and address is not confirmed yet,
-// ask USPS and, if different, RETURN address_mismatch so front-end can show popup.
-try {
-if (addressForUsps && process.env.USPS_USER_ID && addressConfirmed !== 'yes') {
-uploadUspsSuggestion = await verifyAddressWithUSPS(addressForUsps);
-
-if (
-uploadUspsSuggestion &&
-uploadUspsSuggestion.formatted &&
-uploadUspsSuggestion.formatted.trim().toLowerCase() !== addressForUsps.trim().toLowerCase()
-) {
-return res.json({
-ok: false,
-type: 'address_mismatch',
-suggestedAddress: uploadUspsSuggestion.formatted
-});
-}
-}
-} catch (e) {
-console.error('❌ USPS validation for upload form failed:', e);
-}
-  
-/* === Google Drive upload (non-blocking on failure) ==================== */
-try {
-const folderId = await ensureClientFolder(referenceNumber, clientName, clientPhone);
-if (folderId) {
-await uploadFilesToDrive(folderId, req.files, {
-ref: referenceNumber,
-clientName,
-clientEmail
-});
-} else {
-console.warn(`⚠️ No Drive folder created for ref ${referenceNumber}`);
-}
-} catch (e) {
-console.error('❌ Drive upload block failed:', e);
-}
-  
-// === Payload for "Tax Lakay - Upload Log" sheet ===
 const sheetPayload = {
-referenceId: referenceNumber, // column B
-clientName, // C
-clientEmail, // D
-clientPhone, // E
-service, // F
-returnType, // G
-dependents, // H
-cashAdvance, // I (what you choose on the form)
-refundMethod, // J
-currentAddress, // K
-files: filesSummary, // L (W-2, 1099, etc. or "No")
-source, // M
-last4, // N
-private: isPrivate, // O
-language, // P
-clientMessage // Q
+referenceId: referenceNumber, // B
+clientName: clientName || '', // C
+clientEmail: clientEmail || '', // D
+clientPhone: clientPhone || '', // E
+service: serviceValue, // F
+returnType: returnType || '', // G
+dependents: dependents || '0', // H
+cashAdvance: cashAdvance || '', // I
+refundMethod: refundMethod || '', // J
+currentAddress: currentAddress || clientAddress || '', // K
+
+files: filesSummary || '', // L
+source: sourceValue, // M
+last4: last4Value, // N
+private: isPrivateValue, // O
+language: languageValue || '', // P
+clientMessage: clientMessage || '' // Q
 };
 
 const r = await fetch(UPLOAD_SHEET_URL, {
@@ -551,17 +484,17 @@ headers: { 'Content-Type': 'application/json' },
 body: JSON.stringify(sheetPayload)
 });
 
-const j = await r.json().catch(() => ({}));
-if (!r.ok || (j && j.ok === false)) {
-console.error('❌ Upload Sheet logger error:', j && j.error);
-} else {
-console.log('✅ Row logged to Tax Lakay - Upload Log');
-}
+const textSheet = await r.text();
+console.log('[UPLOAD SHEET]', r.status, textSheet);
+
+// optional: if Apps Script returns JSON, you can parse it:
+// let j = {};
+// try { j = JSON.parse(textSheet); } catch (_) {}
+// if (!r.ok || j.ok === false) console.error('❌ Upload Sheet logger error:', j.error);
+
 } catch (e) {
 console.error('❌ Failed calling Upload Sheet logger:', e);
 }
-
-const transporter = createTransporter();
 
 /* ---------------- Email to YOU (admin) ---------------- */
 const adminTo =
