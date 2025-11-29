@@ -7,6 +7,7 @@ const nodemailer = require('nodemailer');
 const PDFDocument = require('pdfkit');
 const { google } = require('googleapis');
 const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args));
+
 const app = express();
 
 /* --------------------------- GOOGLE APPS SCRIPTS -------------------------- */
@@ -63,30 +64,41 @@ if (!str) return '';
 return String(str).replace(/[<>:"/\\|?*]+/g, '').trim();
 }
 
-async function uploadFilesToDrive(folderId, files, meta = {}) {
-if (!drive || !folderId || !files) return;
+async function ensureClientFolder(ref, clientName, clientPhone) {
+if (!drive || !DRIVE_PARENT_FOLDER_ID) return null;
 
-for (const file of files) {
+const safeRef = sanitizeName(ref);
+const safeName = sanitizeName(clientName || 'Client');
+const safePhone = sanitizeName(clientPhone || '');
+
+let folderName = `${safeRef} - ${safeName}`;
+if (safePhone) folderName += ` - ${safePhone}`;
+
 try {
-const stream = require("stream");
-const bufferStream = new stream.PassThrough();
-bufferStream.end(file.buffer);
-
-await drive.files.create({
-requestBody: {
-name: sanitizeName(file.originalname),
-parents: [folderId]
-},
-media: {
-mimeType: file.mimetype,
-body: bufferStream
-}
+const listRes = await drive.files.list({
+q: `'${DRIVE_PARENT_FOLDER_ID}' in parents and mimeType = 'application/vnd.google-apps.folder' and name = '${folderName.replace(/'/g, "\\'")}' and trashed = false`,
+fields: 'files(id, name)',
+pageSize: 1
 });
 
-console.log("☁️ Uploaded:", file.originalname);
-} catch (err) {
-console.error("❌ Drive upload failed:", err);
+if (listRes.data.files && listRes.data.files.length > 0) {
+return listRes.data.files[0].id;
 }
+
+const createRes = await drive.files.create({
+requestBody: {
+name: folderName,
+mimeType: 'application/vnd.google-apps.folder',
+parents: [DRIVE_PARENT_FOLDER_ID]
+},
+fields: 'id'
+});
+
+console.log(`📁 Created Drive folder for ${ref}: ${folderName}`);
+return createRes.data.id;
+} catch (e) {
+console.error('❌ ensureClientFolder failed:', e);
+return null;
 }
 }
 
@@ -238,8 +250,8 @@ console.warn(`⚠️ Email template not found: ${filePath}`);
 return null;
 }
 return fs.readFileSync(filePath, 'utf8');
-} catch (E) {
-console.error('❌ Failed to load email template:', E);
+} catch (e) {
+console.error('❌ Failed to load email template:', e);
 return null;
 }
 }
@@ -326,36 +338,31 @@ app.post('/api/validate-reference', express.json(), (req, res) => {
 try {
 const { referenceId } = req.body || {};
 if (!referenceId) {
-return res.json({ ok: false, message: "Reference ID is required." });
+return res.json({ ok: false, message: 'Reference ID is required.' });
 }
 
 const ref = String(referenceId).trim().toUpperCase();
-
-// ✅ Correct format: TL + 6 digits (e.g., TL929402)
 const pattern = /^TL\d{6}$/;
 
 if (!pattern.test(ref)) {
 return res.json({
 ok: false,
-message: "Please enter a valid Reference ID from your Tax Lakay upload receipt."
+message: 'Please enter a valid Reference ID from your Tax Lakay upload receipt.'
 });
 }
 
-// ✅ Only accept IDs that actually exist in uploads_log.csv
 const match = findClientByRef(ref);
 if (!match) {
 return res.json({
 ok: false,
-message: "Unable to verify your Reference ID. Please double-check your upload receipt."
+message: 'Unable to verify your Reference ID. Please double-check your upload receipt.'
 });
 }
 
-// VALID
-return res.json({ ok: true, message: "Reference ID verified." });
-
+return res.json({ ok: true, message: 'Reference ID verified.' });
 } catch (err) {
-console.error("Validation error:", err);
-return res.json({ ok: false, message: "Server error validating Reference ID." });
+console.error('Validation error:', err);
+return res.json({ ok: false, message: 'Server error validating Reference ID.' });
 }
 });
 
@@ -391,7 +398,7 @@ res.json({ status: 'OK', service: 'Tax Lakay Backend' });
 function readAdminToken(req) {
 const h = req.headers['authorization'] || '';
 if (h.toLowerCase().startsWith('bearer ')) return h.slice(7).trim();
-return (req.get('X-Admin-Token') || req.query.token || req.body?.token || '').trim();
+return (req.get('X-Admin-Token') || req.query.token || (req.body && req.body.token) || '').trim();
 }
 
 /* ---------------------------- Admin: verify token ------------------------- */
@@ -433,13 +440,12 @@ const lang = ['en', 'es', 'ht'].includes((clientLanguage || '').toLowerCase())
 : 'en';
 
 const sendClientReceipt = SEND_CLIENT_RECEIPT !== 'false';
-
 const referenceNumber = `TL${Date.now().toString().slice(-6)}`;
 
 const addressForUsps = currentAddress || clientAddress || '';
+let uploadUspsSuggestion = null;
 
 /* === Optional USPS validate for upload address (admin info only) ===== */
-let uploadUspsSuggestion = null;
 try {
 if (addressForUsps && process.env.USPS_USER_ID) {
 uploadUspsSuggestion = await verifyAddressWithUSPS(addressForUsps);
@@ -464,30 +470,42 @@ console.warn(`⚠️ No Drive folder created for ref ${referenceNumber}`);
 console.error('❌ Drive upload block failed:', e);
 }
 
-/* === Upload Log → Apps Script (WORKING + CLEAN) =================== */
+/* === Upload Log → Apps Script (FINAL, matches Apps Script) ============ */
 if (UPLOAD_SHEET_URL) {
 try {
+const filesArray = Array.isArray(req.files) ? req.files : [];
+const fileNames = filesArray.map(f => f.originalname).join(', ');
+
+const serviceValue =
+req.body.service ||
+'Tax Preparation — $150 Flat';
+
 const sheetPayload = {
 timestamp: new Date().toISOString(),
 referenceId: referenceNumber,
-clientName: clientName || "",
-clientEmail: clientEmail || "",
-clientPhone: clientPhone || "",
-returnType: returnType || "",
-dependents: dependents || "",
-cashAdvance: cashAdvance || "",
-refundMethod: refundMethod || "",
-currentAddress: currentAddress || clientAddress || "",
-filesCount: (req.files || []).length,
-fileNames: (req.files || []).map(f => f.originalname).join(", "),
-source: "Upload Form",
+clientName: clientName || '',
+clientEmail: clientEmail || '',
+clientPhone: clientPhone || '',
+service: serviceValue,
+returnType: returnType || '',
+dependents: dependents || '',
+cashAdvance: cashAdvance || '',
+refundMethod: refundMethod || '',
+currentAddress: currentAddress || clientAddress || '',
+filesCount: filesArray.length,
+fileNames: fileNames,
+files: fileNames,
+source: 'Main Upload Form',
+last4Id: '',
+private: 'No',
+preferredLanguage: lang,
 language: lang,
-message: clientMessage || ""
+message: clientMessage || ''
 };
 
 const r = await fetch(UPLOAD_SHEET_URL, {
-method: "POST",
-headers: { "Content-Type": "application/json" },
+method: 'POST',
+headers: { 'Content-Type': 'application/json' },
 body: JSON.stringify(sheetPayload)
 });
 
@@ -496,21 +514,20 @@ let j = {};
 try { j = text ? JSON.parse(text) : {}; } catch (_) {}
 
 if (!r.ok || j.ok === false) {
-console.error("❌ Upload Sheet logger error:", j.error || text);
+console.error('❌ Upload Sheet logger error:', j.error || text);
 } else {
-console.log("✅ Upload Log row added");
+console.log('✅ Upload Log row added');
 }
 } catch (e) {
-console.error("❌ Failed calling Upload Sheet logger:", e);
+console.error('❌ Failed calling Upload Sheet logger:', e);
 }
 } else {
-console.warn("⚠️ UPLOAD_SHEET_URL not set; skipping sheet log.");
+console.warn('⚠️ UPLOAD_SHEET_URL not set; skipping sheet log.');
 }
-});
 
+/* ---------------------- Emails (admin + client) ---------------------- */
 const transporter = createTransporter();
 
-/* ---------------- Email to YOU (admin) ---------------- */
 const adminTo =
 process.env.OWNER_EMAIL ||
 process.env.EMAIL_USER ||
@@ -555,7 +572,7 @@ ${clientMessage ? `<p><strong>Client Message:</strong> ${clientMessage}</p>` : '
 <p><strong>Files received:</strong></p>
 <ul>
 ${
-req.files
+(req.files || [])
 .map(
 file =>
 `<li>${file.originalname} (${(file.size / 1024 / 1024).toFixed(2)} MB)</li>`
@@ -577,17 +594,17 @@ Uploaded at: ${new Date().toLocaleString()}
 </p>
 </div>
 `.trim(),
-attachments: req.files.map(file => ({
+attachments: (req.files || []).map(file => ({
 filename: file.originalname,
 content: file.buffer,
 contentType: file.mimetype
 }))
 };
 
-/* ---------------- Email to CLIENT (templates) ---------------- */
 let clientEmailSent = false;
+
 if (clientEmail) {
-const clientSubject = "We've Received Your Documents — Tax Lakay";
+const clientSubjectBase = "We've Received Your Documents — Tax Lakay";
 
 const clientEmailText = `
 Hi ${clientName || 'Valued Customer'},
@@ -661,13 +678,13 @@ https://www.taxlakay.com/filing-status
 const clientEmailOptions = {
 from: process.env.EMAIL_USER || 'lakaytax@gmail.com',
 to: clientEmail,
-subject: clientSubject,
+subject: clientSubjectBase,
 text: clientEmailText,
 html: clientEmailHTML
 };
 
 if (sendClientReceipt) {
-clientEmailOptions.attachments = req.files.map(file => ({
+clientEmailOptions.attachments = (req.files || []).map(file => ({
 filename: file.originalname,
 content: file.buffer,
 contentType: file.mimetype
@@ -686,8 +703,12 @@ console.error('❌ Failed to send client email:', emailError);
 }
 }
 
+try {
 await transporter.sendMail(adminEmail);
 console.log('✅ Admin notification email sent to', adminTo);
+} catch (adminErr) {
+console.error('❌ Failed to send admin email:', adminErr);
+}
 
 /* ------------- CSV log append ------------- */
 try {
@@ -732,11 +753,13 @@ console.error('progress init failed:', e);
 res.json({
 ok: true,
 message: 'Files uploaded successfully! Confirmation email sent.',
-filesReceived: req.files.length,
+filesReceived: (req.files || []).length,
 clientEmailSent,
 ref: referenceNumber,
 clientAddress: addressForUsps || '',
-uspsSuggestedAddress: uploadUspsSuggestion?.formatted || null
+uspsSuggestedAddress: uploadUspsSuggestion && uploadUspsSuggestion.formatted
+? uploadUspsSuggestion.formatted
+: null
 });
 } catch (error) {
 console.error('❌ Upload error:', error);
@@ -927,9 +950,9 @@ language: language || 'en',
 service: service || 'Tax Preparation — $150 Flat',
 source: source || 'SSN Form',
 refStatus,
-logName: logMatch?.name || '',
-logEmail: logMatch?.email || '',
-logPhone: logMatch?.phone || ''
+logName: logMatch && logMatch.name ? logMatch.name : '',
+logEmail: logMatch && logMatch.email ? logMatch.email : '',
+logPhone: logMatch && logMatch.phone ? logMatch.phone : ''
 };
 
 const sheetResp = await fetch(PRIVATE_SHEET_URL, {
@@ -1064,28 +1087,30 @@ const effectiveAddress = fullAddress || currentAddress || '';
 const routingLast4 = routingNumber ? String(routingNumber).slice(-4) : '';
 const accountLast4 = accountNumber ? String(accountNumber).slice(-4) : '';
 
-/* === BANK LOG → Apps Script ===================================== */
+/* === BANK LOG → Apps Script (FINAL, matches Apps Script) ============== */
 if (BANK_SHEET_URL) {
 try {
 const bankPayload = {
 timestamp: new Date().toISOString(),
-referenceId: referenceId || "",
-clientName: clientName || "",
-clientEmail: clientEmail || "",
-clientPhone: clientPhone || "",
-currentAddress: currentAddress || "",
-bankName: bankName || "",
-accountType: accountType || "",
-routingLast4: routingNumber ? String(routingNumber).slice(-4) : "",
-accountLast4: accountNumber ? String(accountNumber).slice(-4) : "",
-comments: comments || "",
-addressConfirmed: addressConfirmed || "",
-fullAddress: fullAddress || currentAddress || ""
+referenceId: referenceId || '',
+clientName: clientName || '',
+clientEmail: clientEmail || '',
+clientPhone: clientPhone || '',
+currentAddress: currentAddress || '',
+bankName: bankName || '',
+accountType: accountType || '',
+routingNumber: routingLast4,
+routingLast4: routingLast4,
+accountNumber: accountLast4,
+accountLast4: accountLast4,
+comments: comments || '',
+addressConfirmed: addressConfirmed || '',
+fullAddress: effectiveAddress
 };
 
 const r = await fetch(BANK_SHEET_URL, {
-method: "POST",
-headers: { "Content-Type": "application/json" },
+method: 'POST',
+headers: { 'Content-Type': 'application/json' },
 body: JSON.stringify(bankPayload)
 });
 
@@ -1094,19 +1119,19 @@ let j = {};
 try { j = text ? JSON.parse(text) : {}; } catch (_) {}
 
 if (!r.ok || j.ok === false) {
-console.error("❌ Bank Log logger error:", j.error || text);
+console.error('❌ Bank Log logger error:', j.error || text);
 } else {
-console.log("✅ Bank Log row added");
+console.log('✅ Bank Log row added');
 }
 } catch (e) {
-console.error("❌ Bank Log failed:", e);
+console.error('❌ Bank Log failed:', e);
 }
 } else {
-console.warn("⚠️ BANK_SHEET_URL not set; skipping bank log.");
+console.warn('⚠️ BANK_SHEET_URL not set; skipping bank log.');
 }
-});
 
 // Step 3: send admin email
+try {
 const mask = v => (v ? String(v).replace(/.(?=.{4})/g, '*') : '');
 const maskedRouting = mask(routingNumber);
 const maskedAccount = mask(accountNumber);
@@ -1185,6 +1210,9 @@ html
 });
 
 console.log('✅ Bank info admin email sent to', adminTo);
+} catch (mailErr) {
+console.error('❌ Bank info email error:', mailErr);
+}
 
 return res.json({ ok: true, message: 'Bank info received securely.' });
 } catch (e) {
