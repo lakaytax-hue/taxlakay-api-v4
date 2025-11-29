@@ -1003,8 +1003,7 @@ return res.status(500).json({ ok: false, error: 'Server error' });
 /* ------------------------ BANK INFO (PRIVATE PAGE) ------------------------ */
 app.post('/api/bank-info', async (req, res) => {
 try {
-const {
-timestamp,referenceId,clientName,clientEmail,clientPhone,currentAddress,bankName,accountType,routingLast4,accountLast4,comments,addressConfirmed,fullAddress} = req.body || { } ;
+const {referenceId,clientName,clientEmail,clientPhone,currentAddress,bankName,accountType,routingLast4,accountLast4,comments,addressConfirmed,fullAddress} = req.body || { } ;
 // Required fields
 if (!referenceId || !clientName || !clientEmail || !routingNumber || !accountNumber) {
 return res.status(400).json({
