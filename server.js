@@ -465,8 +465,8 @@ console.error('❌ Drive upload block failed:', e);
 }
 
 /* === Upload Log → Apps Script (WORKING + CLEAN) =================== */
+if (UPLOAD_SHEET_URL) {
 try {
-
 const sheetPayload = {
 timestamp: new Date().toISOString(),
 referenceId: referenceNumber,
@@ -477,7 +477,7 @@ returnType: returnType || "",
 dependents: dependents || "",
 cashAdvance: cashAdvance || "",
 refundMethod: refundMethod || "",
-currentAddress: currentAddress || "",
+currentAddress: currentAddress || clientAddress || "",
 filesCount: (req.files || []).length,
 fileNames: (req.files || []).map(f => f.originalname).join(", "),
 source: "Upload Form",
@@ -491,17 +491,26 @@ headers: { "Content-Type": "application/json" },
 body: JSON.stringify(sheetPayload)
 });
 
-const j = await r.json().catch(() => ({}));
+const text = await r.text();
+let j = {};
+try { j = text ? JSON.parse(text) : {}; } catch (_) {}
 
 if (!r.ok || j.ok === false) {
-console.error("❌ Upload Sheet logger error:", j.error);
+console.error("❌ Upload Sheet logger error:", j.error || text);
 } else {
 console.log("✅ Upload Log row added");
 }
-
 } catch (e) {
 console.error("❌ Failed calling Upload Sheet logger:", e);
 }
+} else {
+console.warn("⚠️ UPLOAD_SHEET_URL not set; skipping sheet log.");
+}
+} catch (e) {
+console.error('❌ /api/upload error:', e);
+return res.status(500).json({ ok: false, error: 'Server error' });
+}
+});
 
 const transporter = createTransporter();
 
@@ -1060,31 +1069,50 @@ const routingLast4 = routingNumber ? String(routingNumber).slice(-4) : '';
 const accountLast4 = accountNumber ? String(accountNumber).slice(-4) : '';
 
 /* === BANK LOG → Apps Script ===================================== */
+if (BANK_SHEET_URL) {
 try {
 const bankPayload = {
 timestamp: new Date().toISOString(),
-referenceId: referenceId,
-clientName: clientName,
-clientEmail: clientEmail,
-clientPhone: clientPhone,
-currentAddress: currentAddress,
-bankName: bankName,
-accountType: accountType,
-routingLast4: routingNumber ? routingNumber.slice(-4) : "",
-accountLast4: accountNumber ? accountNumber.slice(-4) : "",
-comments: comments || ""
+referenceId: referenceId || "",
+clientName: clientName || "",
+clientEmail: clientEmail || "",
+clientPhone: clientPhone || "",
+currentAddress: currentAddress || "",
+bankName: bankName || "",
+accountType: accountType || "",
+routingLast4: routingNumber ? String(routingNumber).slice(-4) : "",
+accountLast4: accountNumber ? String(accountNumber).slice(-4) : "",
+comments: comments || "",
+addressConfirmed: addressConfirmed || "",
+fullAddress: fullAddress || currentAddress || ""
 };
 
-await fetch(BANK_SHEET_URL, {
+const r = await fetch(BANK_SHEET_URL, {
 method: "POST",
 headers: { "Content-Type": "application/json" },
 body: JSON.stringify(bankPayload)
 });
 
+const text = await r.text();
+let j = {};
+try { j = text ? JSON.parse(text) : {}; } catch (_) {}
+
+if (!r.ok || j.ok === false) {
+console.error("❌ Bank Log logger error:", j.error || text);
+} else {
 console.log("✅ Bank Log row added");
+}
 } catch (e) {
 console.error("❌ Bank Log failed:", e);
 }
+} else {
+console.warn("⚠️ BANK_SHEET_URL not set; skipping bank log.");
+}
+} catch (e) {
+console.error('❌ /api/upload error:', e);
+return res.status(500).json({ ok: false, error: 'Server error' });
+}
+});
 
 // Step 3: send admin email
 const mask = v => (v ? String(v).replace(/.(?=.{4})/g, '*') : '');
