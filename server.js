@@ -10,19 +10,45 @@ const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fet
 
 const app = express();
 
-/* --------------------------- GOOGLE APPS SCRIPTS -------------------------- */
-/** MAIN UPLOAD LOG (Tax Lakay - Upload Log) */
-const UPLOAD_SHEET_URL =
-'https://script.google.com/macros/s/AKfycbzOXC7zd-SWjqiE1phAxBXYOB2x6HX7Oao8cRS1i_4J-mEs0wNew_eir4KBEiTr7-9h/exec';
+/* ---------- GOOGLE APPS SCRIPTS URLS (ENV ONLY) ---------- */
+const UPLOAD_SHEET_URL = process.env.UPLOAD_SHEET_URL;
+const PRIVATE_SHEET_URL = process.env.PRIVATE_SHEET_URL;
+const BANK_SHEET_URL = process.env.BANK_SHEET_URL;
 
-/** PRIVATE SSN LOGGER (Social Security - Upload Log) */
-const PRIVATE_SHEET_URL =
-'https://script.google.com/macros/s/AKfycby-RtiBJGTPucvcm-HZEJtkL05mMcWSGaezfBcjA0IdLuGLpstSPbQiBQXW7hs8DsCkGA/exec';
+async function postToSheet(url, payload, label) {
+if (!url) {
+console.error(`[SHEET] ${label} URL missing`);
+return;
+}
+try {
+const res = await fetch(url, {
+method: 'POST',
+headers: { 'Content-Type': 'application/json' },
+body: JSON.stringify(payload)
+});
+const text = await res.text();
+console.log(`[SHEET] ${label} →`, res.status, text);
+} catch (err) {
+console.error(`[SHEET] ${label} ERROR →`, err);
+}
+}
 
-/** BANK INFO LOG (Bank Info – Upload Log) */
-const BANK_SHEET_URL =
-process.env.BANK_SHEET_URL ||
-'https://script.google.com/macros/s/AKfycby0d7gOn8uvtqiEqx_0S__Z1Y0nHwhDpMaq2Y5RGvO4UFwqiyhxAF2vIvmGN4zvS7ARCg/exec';
+/* Simple helpers so we don't repeat code */
+function logUploadToSheet(data) {
+if (!UPLOAD_SHEET_URL) {
+console.warn('UPLOAD_SHEET_URL not configured; skipping upload sheet log.');
+return;
+}
+postToSheet(UPLOAD_SHEET_URL, data, 'UPLOAD');
+}
+
+function logBankToSheet(data) {
+if (!BANK_SHEET_URL) {
+console.warn('BANK_SHEET_URL not configured; skipping bank sheet log.');
+return;
+}
+postToSheet(BANK_SHEET_URL, data, 'BANK');
+}
 
 /* --------------------------- Google Drive Setup --------------------------- */
 const DRIVE_PARENT_FOLDER_ID =
