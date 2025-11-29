@@ -506,10 +506,6 @@ console.error("❌ Failed calling Upload Sheet logger:", e);
 } else {
 console.warn("⚠️ UPLOAD_SHEET_URL not set; skipping sheet log.");
 }
-} catch (e) {
-console.error('❌ /api/upload error:', e);
-return res.status(500).json({ ok: false, error: 'Server error' });
-}
 });
 
 const transporter = createTransporter();
@@ -1107,10 +1103,6 @@ console.error("❌ Bank Log failed:", e);
 }
 } else {
 console.warn("⚠️ BANK_SHEET_URL not set; skipping bank log.");
-}
-} catch (e) {
-console.error('❌ /api/upload error:', e);
-return res.status(500).json({ ok: false, error: 'Server error' });
 }
 });
 
