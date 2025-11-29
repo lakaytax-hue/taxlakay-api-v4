@@ -1000,122 +1000,77 @@ return res.status(500).json({ ok: false, error: 'Server error' });
 }
 });
 
-/* ------------------------ BANK INFO (PRIVATE PAGE) ------------------------ */
+/* ----------------------- BANK INFO (PRIVATE PAGE) ----------------------- */
 app.post('/api/bank-info', async (req, res) => {
 try {
-const {referenceId,clientName,clientEmail,clientPhone,currentAddress,bankName,accountType,routingLast4,accountLast4,comments,addressConfirmed,fullAddress} = req.body || { } ;
-// Required fields
-if (!referenceId || !clientName || !clientEmail || !routingNumber || !accountNumber) {
+const {
+referenceId,
+clientName,
+clientEmail,
+clientPhone,
+currentAddress,
+bankName,
+accountType,
+routingNumber,
+accountNumber,
+comments,
+addressConfirmed,
+fullAddress
+} = req.body || {};
+
+// Required fields (comments is optional)
+if (
+!referenceId ||
+!clientName ||
+!clientEmail ||
+!clientPhone ||
+!currentAddress ||
+!bankName ||
+!accountType ||
+!routingNumber ||
+!accountNumber
+) {
 return res.status(400).json({
 ok: false,
 error: 'Missing required fields'
 });
 }
 
-// Step 1: USPS suggestion if not confirmed yet
-if (currentAddress && process.env.USPS_USER_ID && addressConfirmed !== 'yes') {
-const usps = await verifyAddressWithUSPS(currentAddress);
-if (usps && usps.formatted) {
-const given = currentAddress.trim().toLowerCase();
-const suggested = usps.formatted.trim().toLowerCase();
-if (given !== suggested) {
+// Payload for Bank_Info_Log sheet
+const bankPayload = {
+referenceId,
+clientName,
+clientEmail,
+clientPhone,
+currentAddress,
+bankName,
+accountType,
+routingNumber,
+accountNumber,
+comments: comments || '',
+addressConfirmed: addressConfirmed || '',
+fullAddress: fullAddress || ''
+};
+
+await postToSheet(BANK_SHEET_URL, bankPayload, 'BANK');
+
 return res.json({
+ok: true,
+message: 'Bank info saved successfully.'
+});
+} catch (error) {
+console.error('✗ Bank info error:', error);
+return res.status(500).json({
 ok: false,
-type: 'address_mismatch',
-suggestedAddress: usps.formatted
+error: 'Bank info failed: ' + error.message
 });
-
 }
-}
+}); // ← ONLY this one closing }); for the whole route
 
-// Step 3: send admin email
-const mask = v => (v ? String(v).replace(/.(?=.{4})/g, '*') : '');
-const maskedRouting = mask(routingNumber);
-const maskedAccount = mask(accountNumber);
-
-const transporter = createTransporter();
-const adminTo =
-process.env.BANK_ALERT_EMAIL ||
-process.env.OWNER_EMAIL ||
-process.env.EMAIL_USER ||
-'lakaytax@gmail.com';
-
-const text = `
-New bank information submitted.
-
-Ref: ${referenceId}
-Name: ${clientName}
-Email: ${clientEmail}
-Phone: ${clientPhone || 'N/A'}
-Address: ${currentAddress}
-
-Bank: ${bankName}
-Type: ${accountType}
-Routing (masked): ${maskedRouting}
-Account (masked): ${maskedAccount}
-
-Comments:
-${comments || '(none)'}
-`.trim();
-
-const html = `
-<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; line-height: 1.6;">
-<h2 style="color:#1e63ff;margin-bottom:8px;">New Bank Information Submitted</h2>
-
-<div style="background:#f8fafc;border-radius:8px;padding:14px 16px;margin-bottom:12px;">
-<p style="margin:4px 0;"><strong>Ref:</strong> ${referenceId}</p>
-<p style="margin:4px 0;"><strong>Name:</strong> ${clientName}</p>
-<p style="margin:4px 0;"><strong>Email:</strong> ${
-clientEmail
-? `<a href="mailto:${clientEmail}" style="color:#1e63ff;">${clientEmail}</a>`
-: 'N/A'
-}</p>
-<p style="margin:4px 0;"><strong>Phone:</strong> ${
-clientPhone
-? `<a href="tel:${clientPhone.replace(/[^0-9+]/g, '')}" style="color:#1e63ff;">${clientPhone}</a>`
-: 'N/A'
-}</p>
-<p style="margin:4px 0;"><strong>Address:</strong> ${currentAddress}</p>
-</div>
-
-<div style="background:#ecfdf5;border-radius:8px;padding:14px 16px;margin-bottom:12px;">
-<p style="margin:4px 0;"><strong>Bank:</strong> ${bankName}</p>
-<p style="margin:4px 0;"><strong>Type:</strong> ${accountType}</p>
-<p style="margin:4px 0;"><strong>Routing (masked):</strong> ${maskedRouting}</p>
-<p style="margin:4px 0;"><strong>Account (masked):</strong> ${maskedAccount}</p>
-</div>
-
-${
-comments
-? `<p style="margin:4px 0;"><strong>Comments:</strong> ${comments}</p>`
-: ''
-}
-
-<p style="margin-top:12px;font-size:12px;color:#64748b;">
-Full routing and account numbers are <strong>not</strong> stored in email.
-Last four digits are visible only in your private sheet.
-</p>
-</div>
-`.trim();
-
-await transporter.sendMail({
-from: process.env.EMAIL_USER || 'lakaytax@gmail.com',
-to: adminTo,
-subject: `New Bank Info Submitted — Ref ${referenceId}`,
-text,
-html
-});
-
-console.log('  Bank info admin email sent to', adminTo);
-
-return res.json({ ok: true, message: 'Bank info received securely.' });
-} catch (e) {
-console.error('bank-info error:', e);
-return res.status(500).json({ ok: false, error: 'Server error' });
-}
-});
-
-/* ------------------------ Progress tracking store ------------------------ */
+/* -------------------- PDF route for Refund Estimator -------------------- */
+app.get('/api/estimator-pdf', (req, res) => {
+// ... existing code stays the same ...
+});/* ------------------------ Progress tracking store ------------------------ */
 const PROGRESS_FILE = path.join(PUBLIC_DIR, 'progress.json');
 
 function ensureProgressFile() {
