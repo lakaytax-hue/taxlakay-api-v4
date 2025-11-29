@@ -8,20 +8,19 @@ const PDFDocument = require('pdfkit');
 const { google } = require('googleapis');
 const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args));
 const app = express();
-
 /* --------------------------- GOOGLE APPS SCRIPTS -------------------------- */
 /** MAIN UPLOAD LOG (Tax Lakay - Upload Log) */
 const UPLOAD_SHEET_URL =
-'https://script.google.com/macros/s/AKfycbwvSQwRj_-ZFHCv94vm4Ve87WD5ZHhgqNevMcwi1Eweg36Gp3Wh8IFOm7BF97YIITUU/exec';
+'https://script.google.com/macros/s/AKfycbxl0PgbwwQKmyeSn_yeJISZSht8zXBOIcaSeJScrUJK-Ldyv2ekUQLIi6eqMqmaPbVr/exec';
 
 /** PRIVATE SSN LOGGER (Social Security - Upload Log) */
 const PRIVATE_SHEET_URL =
-'https://script.google.com/macros/s/AKfycbxl0PgbwwQKmyeSn_yeJISZSht8zXBOIcaSeJScrUJK-Ldyv2ekUQLIi6eqMqmaPbVr/exec';
+'https://script.google.com/macros/s/AKfycby-RtiBJGTPucvcm-HZEJtkL05mMcWSGaezfBcjA0IdLuGLpstSPbQiBQXW7hs8DsCkGA/exec';
+
 /** BANK INFO LOG (Bank Info – Upload Log) */
 const BANK_SHEET_URL =
 process.env.BANK_SHEET_URL ||
-'https://script.google.com/macros/s/AKfycby-vgK1j7Uj7JIMpNuxl8StMIa869-KXxDO9yGNRufdj_YDE7ocunX_PAwtwgs2kZjr/exec';
-/* --------------------------- Google Drive Setup --------------------------- */
+'https://script.google.com/macros/s/AKfycby-vgK1j7Uj7JIMpNuxl8StMIa869-KXxDO9yGNRufdj_YDE7ocunX_PAwtwgs2kZjr/exec';/* --------------------------- Google Drive Setup --------------------------- */
 const DRIVE_PARENT_FOLDER_ID =
 process.env.GOOGLE_DRIVE_PARENT_FOLDER_ID ||
 '16tx8uhyrq79K481-2Ey1SZz-ScRb5EJh';
@@ -34,7 +33,7 @@ const clientEmail = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
 const rawKey = process.env.GOOGLE_PRIVATE_KEY || '';
 
 if (!clientEmail || !rawKey || !DRIVE_PARENT_FOLDER_ID) {
-console.warn('⚠️ Google Drive not fully configured. Skipping Drive uploads.');
+console.warn('  Google Drive not fully configured. Skipping Drive uploads.');
 return;
 }
 
@@ -48,9 +47,9 @@ privateKey,
 );
 
 drive = google.drive({ version: 'v3', auth });
-console.log('✅ Google Drive client initialized');
+console.log('  Google Drive client initialized');
 } catch (e) {
-console.error('❌ Failed to init Google Drive client:', e);
+console.error('  Failed to init Google Drive client:', e);
 drive = null;
 }
 })();
@@ -91,10 +90,10 @@ parents: [DRIVE_PARENT_FOLDER_ID]
 fields: 'id'
 });
 
-console.log(`📁 Created Drive folder for ${ref}: ${folderName}`);
-return createRes.data.id;
+console.log(`  Created Drive folder for ${ref}: ${folderName}`);
+return createRes.data.id;
 } catch (e) {
-console.error('❌ ensureClientFolder failed:', e);
+console.error('  ensureClientFolder failed:', e);
 return null;
 }
 }
@@ -121,9 +120,9 @@ body: Buffer.isBuffer(file.buffer)
 },
 fields: 'id, name'
 });
-console.log(`☁️ Uploaded to Drive: ${res.data.name} (${res.data.id})`);
+console.log(`  Uploaded to Drive: ${res.data.name} (${res.data.id})`);
 } catch (e) {
-console.error('❌ Failed to upload file to Drive:', e);
+console.error('  Failed to upload file to Drive:', e);
 }
 }
 }
@@ -243,12 +242,12 @@ const file = map[lang] || map.en;
 try {
 const filePath = path.join(EMAIL_DIR, file);
 if (!fs.existsSync(filePath)) {
-console.warn(`⚠️ Email template not found: ${filePath}`);
+console.warn(`  Email template not found: ${filePath}`);
 return null;
 }
 return fs.readFileSync(filePath, 'utf8');
 } catch (E) {
-console.error('❌ Failed to load email template:', E);
+console.error('  Failed to load email template:', E);
 return null;
 }
 }
@@ -340,7 +339,7 @@ return res.json({ ok: false, message: "Reference ID is required." });
 
 const ref = String(referenceId).trim().toUpperCase();
 
-// ✅ Correct format: TL + 6 digits (e.g., TL929402)
+//   Correct format: TL + 6 digits (e.g., TL929402)
 const pattern = /^TL\d{6}$/;
 
 if (!pattern.test(ref)) {
@@ -350,7 +349,7 @@ message: "Please enter a valid Reference ID from your Tax Lakay upload receipt."
 });
 }
 
-// ✅ Only accept IDs that actually exist in uploads_log.csv
+//   Only accept IDs that actually exist in uploads_log.csv
 const match = findClientByRef(ref);
 if (!match) {
 return res.json({
@@ -414,7 +413,7 @@ res.json({ ok });
 /* ------------------------------ Upload API -------------------------------- */
 app.post('/api/upload', upload.any(), async (req, res) => {
 try {
-console.log('📨 Upload request received');
+console.log('  Upload request received');
 console.log('Files:', req.files ? req.files.length : 0);
 console.log('Body:', req.body);
 
@@ -454,7 +453,7 @@ if (addressForUsps && process.env.USPS_USER_ID) {
 uploadUspsSuggestion = await verifyAddressWithUSPS(addressForUsps);
 }
 } catch (e) {
-console.error('❌ USPS validation for upload form failed:', e);
+console.error('  USPS validation for upload form failed:', e);
 }
 
 /* === Google Drive upload (non-blocking on failure) ==================== */
@@ -467,47 +466,28 @@ clientName,
 clientEmail
 });
 } else {
-console.warn(`⚠️ No Drive folder created for ref ${referenceNumber}`);
+console.warn(`  No Drive folder created for ref ${referenceNumber}`);
 }
 } catch (e) {
-console.error('❌ Drive upload block failed:', e);
+console.error('  Drive upload block failed:', e);
 }
 
 /* === Upload Log → Apps Script (now with new fields) =================== */
 try {
 const sheetPayload = {
-referenceId: referenceNumber,
-clientName: clientName || '',
-clientEmail: clientEmail || '',
-clientPhone: clientPhone || '',
-clientAddress: clientAddress || '',
-service: returnType || 'Tax Preparation — $150 Flat',
-returnType: returnType || '',
-dependents: dependents || '0',
-files: (req.files || []).map(f => f.originalname).join('; '),
-source: 'Main Upload Form',
-last4: '',
-private: 'No',
-language: lang,
-cashAdvance: cashAdvance || '', // ✅ NEW
-refundMethod: refundMethod || '', // ✅ NEW
-currentAddress: currentAddress || clientAddress || '' // ✅ NEW
-};
-
-const r = await fetch(UPLOAD_SHEET_URL, {
-method: 'POST',
+timestamp, // Timestamp,referenceId, // Reference ID,clientName, // Client Name,clientEmail, // Client Email,clientPhone, // Client Phone,service, // Service,returnType, // Return Type,dependents, // Dependents,cashAdvance, // Cash Advance (string or amount),refundMethod, // Refund Method,currentAddress, // Current Address,filesCell, // Files,source, // Source,last4Id, // Last 4 ID,isPrivate, // Private,preferredLanguage, // Preferred Language,message // Message,});const r = await fetch(UPLOAD_SHEET_URL, {method: 'POST',
 headers: { 'Content-Type': 'application/json' },
 body: JSON.stringify(sheetPayload)
 });
 
 const j = await r.json().catch(() => ({}));
 if (!r.ok || (j && j.ok === false)) {
-console.error('❌ Upload Sheet logger error:', j && j.error);
+console.error('  Upload Sheet logger error:', j && j.error);
 } else {
-console.log('✅ Row logged to Tax Lakay - Upload Log');
+console.log('  Row logged to Tax Lakay - Upload Log');
 }
 } catch (e) {
-console.error('❌ Failed calling Upload Sheet logger:', e);
+console.error('  Failed calling Upload Sheet logger:', e);
 }
 
 const transporter = createTransporter();
@@ -522,10 +502,10 @@ const adminEmail = {
 from: process.env.EMAIL_USER || 'lakaytax@gmail.com',
 to: adminTo,
 replyTo: clientEmail || undefined,
-subject: `📋 New Tax Document Upload - ${clientName || 'Customer'}`,
+subject: `  New Tax Document Upload - ${clientName || 'Customer'}`,
 html: `
 <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-<h2 style="color: #1e63ff;">📋 New Document Upload Received</h2>
+<h2 style="color: #1e63ff;">  New Document Upload Received</h2>
 
 <div style="background: #f8fafc; padding: 15px; border-radius: 8px; margin: 15px 0;">
 <h3 style="margin-top: 0;">Client Information:</h3>
@@ -573,9 +553,9 @@ Uploaded at: ${new Date().toLocaleString()}
 
 <hr style="border:none;border-top:1px solid #e5e7eb;margin:16px 0;">
 <p style="font-size:13px;color:#475569;margin:0;">
-📧 <a href="mailto:lakaytax@gmail.com">lakaytax@gmail.com</a> &nbsp;|&nbsp;
-📞 <a href="tel:13179359067">(317) 935-9067</a> &nbsp;|&nbsp;
-💻 <a href="https://www.taxlakay.com">www.taxlakay.com</a>
+  <a href="mailto:lakaytax@gmail.com">lakaytax@gmail.com</a> &nbsp;|&nbsp;
+  <a href="tel:13179359067">(317) 935-9067</a> &nbsp;|&nbsp;
+  <a href="https://www.taxlakay.com">www.taxlakay.com</a>
 </p>
 </div>
 `.trim(),
@@ -594,7 +574,7 @@ const clientSubject = "We've Received Your Documents — Tax Lakay";
 const clientEmailText = `
 Hi ${clientName || 'Valued Customer'},
 
-Thank you so much for choosing Tax Lakay! 🎉
+Thank you so much for choosing Tax Lakay!  
 We've received your documents and will start preparing your tax return shortly.
 If we need any additional information, we'll reach out right away.
 
@@ -605,9 +585,9 @@ https://www.taxlakay.com/filing-status
 
 Warm regards,
 The Tax Lakay Team
-📧 lakaytax@gmail.com
-📞 (317) 935-9067
-💻 https://www.taxlakay.com
+  lakaytax@gmail.com
+  (317) 935-9067
+  https://www.taxlakay.com
 `.trim();
 
 let clientEmailHTML = null;
@@ -619,7 +599,7 @@ clientEmailHTML = tpl
 .replace(/{{ref_number}}/g, referenceNumber);
 }
 } catch (e) {
-console.error('❌ Error applying email template:', e);
+console.error('  Error applying email template:', e);
 }
 
 if (!clientEmailHTML) {
@@ -632,7 +612,7 @@ clientEmailHTML = `
 
 <div style="background: #f0f9ff; padding: 20px; border-radius: 10px; margin: 15px 0;">
 <p><strong>Hi ${clientName || 'Valued Customer'},</strong></p>
-<p>Thank you so much for choosing Tax Lakay! 🎉</p>
+<p>Thank you so much for choosing Tax Lakay!  </p>
 <p>We've received your documents and will start preparing your tax return shortly.<br>
 If we need any additional information, we'll reach out right away.</p>
 
@@ -651,9 +631,9 @@ https://www.taxlakay.com/filing-status
 <div style="text-align: center; margin-top: 25px; padding-top: 20px; border-top: 1px solid #e5e7eb;">
 <p style="margin: 5px 0; color: #475569;"><strong>Warm regards,</strong><br>The Tax Lakay Team</p>
 <p style="margin: 8px 0; color: #64748b;">
-📧 <a href="mailto:lakaytax@gmail.com" style="color: #1e63ff;">lakaytax@gmail.com</a> &nbsp;
-📞 <a href="tel:3179359067" style="color: #1e63ff;">(317) 935-9067</a><br>
-💻 <a href="https://www.taxlakay.com" style="color: #1e63ff;">www.taxlakay.com</a>
+  <a href="mailto:lakaytax@gmail.com" style="color: #1e63ff;">lakaytax@gmail.com</a> &nbsp;
+  <a href="tel:3179359067" style="color: #1e63ff;">(317) 935-9067</a><br>
+  <a href="https://www.taxlakay.com" style="color: #1e63ff;">www.taxlakay.com</a>
 </p>
 </div>
 </div>
@@ -681,15 +661,15 @@ clientEmailOptions.subject =
 try {
 await transporter.sendMail(clientEmailOptions);
 clientEmailSent = true;
-console.log('✅ Client confirmation email sent to:', clientEmail);
-console.log('📎 Files attached:', sendClientReceipt);
+console.log('  Client confirmation email sent to:', clientEmail);
+console.log('  Files attached:', sendClientReceipt);
 } catch (emailError) {
-console.error('❌ Failed to send client email:', emailError);
+console.error('  Failed to send client email:', emailError);
 }
 }
 
 await transporter.sendMail(adminEmail);
-console.log('✅ Admin notification email sent to', adminTo);
+console.log('  Admin notification email sent to', adminTo);
 
 /* ------------- CSV log append ------------- */
 try {
@@ -741,7 +721,7 @@ clientAddress: addressForUsps || '',
 uspsSuggestedAddress: uploadUspsSuggestion?.formatted || null
 });
 } catch (error) {
-console.error('❌ Upload error:', error);
+console.error('  Upload error:', error);
 res.status(500).json({ ok: false, error: 'Upload failed: ' + error.message });
 }
 });
@@ -797,7 +777,7 @@ doc
 )
 .moveDown()
 .fillColor('#111827')
-.text('Contact: lakaytax@gmail.com');
+.text('Contact: lakaytax@gmail.com');
 
 doc.end();
 });
@@ -871,7 +851,7 @@ doc
 .moveDown(2)
 .fillColor('#475569')
 .fontSize(10)
-.text('📞 (317) 935-9067 | 🌐 www.taxlakay.com | 📧 lakaytax@gmail.com', {
+.text('  (317) 935-9067 |   www.taxlakay.com |   lakaytax@gmail.com', {
 align: 'center'
 });
 doc
@@ -1003,9 +983,9 @@ text,
 html
 });
 
-console.log('✅ Admin SSN notification email sent to lakaytax@gmail.com');
+console.log('  Admin SSN notification email sent to lakaytax@gmail.com');
 } catch (emailErr) {
-console.error('❌ Failed to send SSN admin email:', emailErr);
+console.error('  Failed to send SSN admin email:', emailErr);
 }
 
 return res.json({
@@ -1024,19 +1004,7 @@ return res.status(500).json({ ok: false, error: 'Server error' });
 app.post('/api/bank-info', async (req, res) => {
 try {
 const {
-referenceId,
-clientName,
-clientEmail,
-clientPhone,
-currentAddress,
-bankName,
-accountType,
-routingNumber,
-accountNumber,
-comments,
-addressConfirmed,
-fullAddress
-} = req.body || {};
+timestamp,referenceId,clientName,clientEmail,clientPhone,currentAddress,bankName,accountType,routingLast4,accountLast4,comments,addressConfirmed,fullAddress} = req.body || {};
 
 // Required fields
 if (!referenceId || !clientName || !clientEmail || !routingNumber || !accountNumber) {
@@ -1140,7 +1108,7 @@ text,
 html
 });
 
-console.log('✅ Bank info admin email sent to', adminTo);
+console.log('  Bank info admin email sent to', adminTo);
 
 return res.json({ ok: true, message: 'Bank info received securely.' });
 } catch (e) {
@@ -1188,13 +1156,13 @@ async function sendStatusEmail(ref, stage, note) {
 try {
 const client = findClientByRef(ref);
 if (!client || !client.email) {
-console.log(`ℹ️ No email found for ref ${ref}, skipping status email.`);
+console.log(`  No email found for ref ${ref}, skipping status email.`);
 return;
 }
 
 const transporter = createTransporter();
 const safeStage = stage || 'Updated';
-const safeName = client.name || 'Valued Customer';
+const safeName = client.name || 'Valued Customer';
 
 const subject = `Your Tax Lakay filing status has been updated (${safeStage})`;
 
@@ -1216,9 +1184,9 @@ If you have any questions, you can reply to this email or call us at (317) 935-9
 
 Warm regards,
 Tax Lakay
-📧 lakaytax@gmail.com
-📞 (317) 935-9067
-💻 https://www.taxlakay.com
+  lakaytax@gmail.com
+  (317) 935-9067
+  https://www.taxlakay.com
 `.trim();
 
 const html = `
@@ -1253,7 +1221,7 @@ unique Reference ID on our secure tracking page:
 </p>
 
 <p style="font-size:14px;">
-🔗 <a href="https://www.taxlakay.com/filing-status" style="color:#1e63ff;font-weight:bold;">
+  <a href="https://www.taxlakay.com/filing-status" style="color:#1e63ff;font-weight:bold;">
 https://www.taxlakay.com/filing-status
 </a><br>
 <span style="font-size:13px;color:#4b5563;">
@@ -1269,9 +1237,9 @@ If you have any questions, you can reply to this email or call us at
 <hr style="border:none;border-top:1px solid #e5e7eb;margin:18px 0;">
 
 <p style="text-align:center;font-size:13px;color:#64748b;margin:0;">
-📧 <a href="mailto:lakaytax@gmail.com" style="color:#1e63ff;">lakaytax@gmail.com</a> &nbsp;|&nbsp;
-📞 <a href="tel:13179359067" style="color:#1e63ff;">(317) 935-9067</a> &nbsp;|&nbsp;
-💻 <a href="https://www.taxlakay.com" style="color:#1e63ff;">www.taxlakay.com</a>
+  <a href="mailto:lakaytax@gmail.com" style="color:#1e63ff;">lakaytax@gmail.com</a> &nbsp;|&nbsp;
+  <a href="tel:13179359067" style="color:#1e63ff;">(317) 935-9067</a> &nbsp;|&nbsp;
+  <a href="https://www.taxlakay.com" style="color:#1e63ff;">www.taxlakay.com</a>
 </p>
 </div>
 `.trim();
@@ -1285,7 +1253,7 @@ html
 };
 
 await transporter.sendMail(mailOptions);
-console.log(`📧 Status email sent to ${client.email} for ref ${ref}`);
+console.log(`  Status email sent to ${client.email} for ref ${ref}`);
 } catch (e) {
 console.error('sendStatusEmail failed:', e);
 }
@@ -1379,6 +1347,6 @@ res.json({ ok: true, all: db });
 /* ----------------------------- Start server ------------------------------ */
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, '0.0.0.0', () => {
-console.log(`🚀 Tax Lakay Backend running on port ${PORT}`);
-console.log(`✅ Health check: http://localhost:${PORT}/health`);
+console.log(`  Tax Lakay Backend running on port ${PORT}`);
+console.log(`  Health check: http://localhost:${PORT}/health`);
 });
