@@ -570,31 +570,44 @@ const isPrivate = ''; // not a private upload
 const preferredLanguage = lang;
 const message = clientMessage || '';
 
+/* === Upload Log → Apps Script (WORKING + CLEAN) =================== */
+try {
+
 const sheetPayload = {
-timestamp, // Timestamp
-referenceId: referenceNumber, // Reference ID
-clientName: clientName || '',
-clientEmail: clientEmail || '',
-clientPhone: clientPhone || '',
-service, // Service
-returnType: returnType || '',
-dependents: dependents || '',
-cashAdvance: cashAdvance || '',
-refundMethod: refundMethod || '',
-currentAddress: addressForUsps || '',
-files: filesCell,
-source,
-last4Id,
-private: isPrivate,
-preferredLanguage,
-message
+timestamp: new Date().toISOString(),
+referenceId: referenceNumber,
+clientName: clientName || "",
+clientEmail: clientEmail || "",
+clientPhone: clientPhone || "",
+returnType: returnType || "",
+dependents: dependents || "",
+cashAdvance: cashAdvance || "",
+refundMethod: refundMethod || "",
+currentAddress: currentAddress || "",
+filesCount: (req.files || []).length,
+fileNames: (req.files || []).map(f => f.originalname).join(", "),
+source: "Upload Form",
+language: lang,
+message: clientMessage || ""
 };
 
-await logUploadToSheet(sheetPayload);
-} catch (e) {
-console.error('❌ Failed calling Upload Sheet logger:', e);
+const r = await fetch(UPLOAD_SHEET_URL, {
+method: "POST",
+headers: { "Content-Type": "application/json" },
+body: JSON.stringify(sheetPayload)
+});
+
+const j = await r.json().catch(() => ({}));
+
+if (!r.ok || j.ok === false) {
+console.error("❌ Upload Sheet logger error:", j.error);
+} else {
+console.log("✅ Upload Log row added");
 }
 
+} catch (e) {
+console.error("❌ Failed calling Upload Sheet logger:", e);
+}
 const transporter = createTransporter();
 
 /* ---------------- Email to YOU (admin) ---------------- */
@@ -1229,30 +1242,32 @@ const effectiveAddress = fullAddress || currentAddress || '';
 const routingLast4 = routingNumber ? String(routingNumber).slice(-4) : '';
 const accountLast4 = accountNumber ? String(accountNumber).slice(-4) : '';
 
-// Step 2: log to Bank Apps Script
+/* === BANK LOG → Apps Script ===================================== */
 try {
 const bankPayload = {
 timestamp: new Date().toISOString(),
-referenceId,
-clientName,
-clientEmail,
-clientPhone,
-currentAddress: effectiveAddress,
-bankName,
-accountType,
-routingLast4,
-accountLast4,
-comments: comments || '',
-source: 'Bank Info Form',
-addressConfirmed: addressConfirmed === 'yes' ? 'yes' : '',
-fullAddress: effectiveAddress
+referenceId: referenceId,
+clientName: clientName,
+clientEmail: clientEmail,
+clientPhone: clientPhone,
+currentAddress: currentAddress,
+bankName: bankName,
+accountType: accountType,
+routingLast4: routingNumber ? routingNumber.slice(-4) : "",
+accountLast4: accountNumber ? accountNumber.slice(-4) : "",
+comments: comments || ""
 };
 
-await logBankToSheet(bankPayload);
-} catch (e) {
-console.error('Bank sheet call failed:', e);
-}
+await fetch(BANK_SHEET_URL, {
+method: "POST",
+headers: { "Content-Type": "application/json" },
+body: JSON.stringify(bankPayload)
+});
 
+console.log("✅ Bank Log row added");
+} catch (e) {
+console.error("❌ Bank Log failed:", e);
+  
 // Step 3: send admin email
 const mask = v =>
 v ? String(v).replace(/.(?=.{4})/g, '*') : '';
