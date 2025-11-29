@@ -107,75 +107,29 @@ if (!str) return '';
 return String(str).replace(/[<>:"/\\|?*]+/g, '').trim();
 }
 
-async function ensureClientFolder(ref, clientName, clientPhone) {
-if (!drive || !DRIVE_PARENT_FOLDER_ID) return null;
-
-const safeRef = sanitizeName(ref);
-const safeName = sanitizeName(clientName || 'Client');
-const safePhone = sanitizeName(clientPhone || '');
-
-let folderName = `${safeRef} - ${safeName}`;
-if (safePhone) folderName += ` - ${safePhone}`;
-
-try {
-const listRes = await drive.files.list({
-q: `'${DRIVE_PARENT_FOLDER_ID}' in parents and mimeType = 'application/vnd.google-apps.folder' and name = '${folderName.replace(
-/'/g,
-"\\'"
-)}' and trashed = false`,
-fields: 'files(id, name)',
-pageSize: 1
-});
-
-if (listRes.data.files && listRes.data.files.length > 0) {
-return listRes.data.files[0].id;
-}
-
-const createRes = await drive.files.create({
-requestBody: {
-name: folderName,
-mimeType: 'application/vnd.google-apps.folder',
-parents: [DRIVE_PARENT_FOLDER_ID]
-},
-fields: 'id'
-});
-
-console.log(`📁 Created Drive folder for ${ref}: ${folderName}`);
-return createRes.data.id;
-} catch (e) {
-console.error('❌ ensureClientFolder failed:', e);
-return null;
-}
-}
-
 async function uploadFilesToDrive(folderId, files, meta = {}) {
-if (!drive || !folderId || !Array.isArray(files) || files.length === 0)
-return;
+if (!drive || !folderId || !files) return;
 
 for (const file of files) {
 try {
-const fileName = sanitizeName(file.originalname) || 'document';
-const res = await drive.files.create({
+const stream = require("stream");
+const bufferStream = new stream.PassThrough();
+bufferStream.end(file.buffer);
+
+await drive.files.create({
 requestBody: {
-name: fileName,
-parents: [folderId],
-description: `TaxLakay upload — Ref: ${meta.ref || ''}, Name: ${
-meta.clientName || ''
-}, Email: ${meta.clientEmail || ''}`
+name: sanitizeName(file.originalname),
+parents: [folderId]
 },
 media: {
 mimeType: file.mimetype,
-body: Buffer.isBuffer(file.buffer)
-? require('stream').Readable.from(file.buffer)
-: file.buffer
-},
-fields: 'id, name'
+body: bufferStream
+}
 });
-console.log(
-`☁️ Uploaded to Drive: ${res.data.name} (${res.data.id})`
-);
-} catch (e) {
-console.error('❌ Failed to upload file to Drive:', e);
+
+console.log("☁️ Uploaded:", file.originalname);
+} catch (err) {
+console.error("❌ Drive upload failed:", err);
 }
 }
 }
