@@ -6,7 +6,8 @@ const cors = require('cors');
 const nodemailer = require('nodemailer');
 const PDFDocument = require('pdfkit');
 const { google } = require('googleapis');
-const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args));
+const fetch = (...args) =>
+import('node-fetch').then(({ default: fetch }) => fetch(...args));
 
 const app = express();
 
@@ -24,6 +25,46 @@ const BANK_SHEET_URL =
 process.env.BANK_SHEET_URL ||
 'https://script.google.com/macros/s/AKfycby-vgK1j7Uj7JIMpNuxl8StMIa869-KXxDO9yGNRufdj_YDE7ocunX_PAwtwgs2kZjr/exec';
 
+/* ---------------------- APPS SCRIPT LOG HELPERS --------------------------- */
+
+async function logUploadToSheet(payload) {
+try {
+const r = await fetch(UPLOAD_SHEET_URL, {
+method: 'POST',
+headers: { 'Content-Type': 'application/json' },
+body: JSON.stringify(payload)
+});
+
+const j = await r.json().catch(() => ({}));
+if (!r.ok || (j && j.ok === false)) {
+console.error('❌ Upload Sheet logger error:', j && j.error);
+} else {
+console.log('✅ Row logged to Tax Lakay - Upload Log');
+}
+} catch (e) {
+console.error('❌ Failed calling Upload Sheet logger:', e);
+}
+}
+
+async function logBankToSheet(payload) {
+try {
+const r = await fetch(BANK_SHEET_URL, {
+method: 'POST',
+headers: { 'Content-Type': 'application/json' },
+body: JSON.stringify(payload)
+});
+
+const j = await r.json().catch(() => ({}));
+if (!r.ok || (j && j.ok === false)) {
+console.error('❌ Bank Sheet logger error:', j && j.error);
+} else {
+console.log('✅ Row logged to Bank Info – Upload Log');
+}
+} catch (e) {
+console.error('❌ Failed calling Bank Sheet logger:', e);
+}
+}
+
 /* --------------------------- Google Drive Setup --------------------------- */
 const DRIVE_PARENT_FOLDER_ID =
 process.env.GOOGLE_DRIVE_PARENT_FOLDER_ID ||
@@ -37,7 +78,9 @@ const clientEmail = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
 const rawKey = process.env.GOOGLE_PRIVATE_KEY || '';
 
 if (!clientEmail || !rawKey || !DRIVE_PARENT_FOLDER_ID) {
-console.warn('⚠️ Google Drive not fully configured. Skipping Drive uploads.');
+console.warn(
+'⚠️ Google Drive not fully configured. Skipping Drive uploads.'
+);
 return;
 }
 
@@ -76,7 +119,10 @@ if (safePhone) folderName += ` - ${safePhone}`;
 
 try {
 const listRes = await drive.files.list({
-q: `'${DRIVE_PARENT_FOLDER_ID}' in parents and mimeType = 'application/vnd.google-apps.folder' and name = '${folderName.replace(/'/g, "\\'")}' and trashed = false`,
+q: `'${DRIVE_PARENT_FOLDER_ID}' in parents and mimeType = 'application/vnd.google-apps.folder' and name = '${folderName.replace(
+/'/g,
+"\\'"
+)}' and trashed = false`,
 fields: 'files(id, name)',
 pageSize: 1
 });
@@ -103,7 +149,8 @@ return null;
 }
 
 async function uploadFilesToDrive(folderId, files, meta = {}) {
-if (!drive || !folderId || !Array.isArray(files) || files.length === 0) return;
+if (!drive || !folderId || !Array.isArray(files) || files.length === 0)
+return;
 
 for (const file of files) {
 try {
@@ -124,7 +171,9 @@ body: Buffer.isBuffer(file.buffer)
 },
 fields: 'id, name'
 });
-console.log(`☁️ Uploaded to Drive: ${res.data.name} (${res.data.id})`);
+console.log(
+`☁️ Uploaded to Drive: ${res.data.name} (${res.data.id})`
+);
 } catch (e) {
 console.error('❌ Failed to upload file to Drive:', e);
 }
@@ -343,28 +392,35 @@ return res.json({ ok: false, message: 'Reference ID is required.' });
 
 const ref = String(referenceId).trim().toUpperCase();
 
-// TL + 6 digits
+// ✅ Correct format: TL + 6 digits (e.g., TL929402)
 const pattern = /^TL\d{6}$/;
 
 if (!pattern.test(ref)) {
 return res.json({
 ok: false,
-message: 'Please enter a valid Reference ID from your Tax Lakay upload receipt.'
+message:
+'Please enter a valid Reference ID from your Tax Lakay upload receipt.'
 });
 }
 
+// ✅ Only accept IDs that actually exist in uploads_log.csv
 const match = findClientByRef(ref);
 if (!match) {
 return res.json({
 ok: false,
-message: 'Unable to verify your Reference ID. Please double-check your upload receipt.'
+message:
+'Unable to verify your Reference ID. Please double-check your upload receipt.'
 });
 }
 
+// VALID
 return res.json({ ok: true, message: 'Reference ID verified.' });
 } catch (err) {
 console.error('Validation error:', err);
-return res.json({ ok: false, message: 'Server error validating Reference ID.' });
+return res.json({
+ok: false,
+message: 'Server error validating Reference ID.'
+});
 }
 });
 
@@ -382,7 +438,10 @@ const createTransporter = () => {
 return nodemailer.createTransport({
 service: 'gmail',
 auth: {
-user: process.env.Email_USER || process.env.EMAIL_USER || 'lakaytax@gmail.com',
+user:
+process.env.Email_USER ||
+process.env.EMAIL_USER ||
+'lakaytax@gmail.com',
 pass: process.env.EMAIL_PASS
 }
 });
@@ -390,7 +449,10 @@ pass: process.env.EMAIL_PASS
 
 /* ------------------------------ Health ----------------------------------- */
 app.get('/', (req, res) => {
-res.json({ message: 'Tax Lakay Backend is running!', timestamp: new Date().toISOString() });
+res.json({
+message: 'Tax Lakay Backend is running!',
+timestamp: new Date().toISOString()
+});
 });
 app.get('/health', (req, res) => {
 res.json({ status: 'OK', service: 'Tax Lakay Backend' });
@@ -400,7 +462,12 @@ res.json({ status: 'OK', service: 'Tax Lakay Backend' });
 function readAdminToken(req) {
 const h = req.headers['authorization'] || '';
 if (h.toLowerCase().startsWith('bearer ')) return h.slice(7).trim();
-return (req.get('X-Admin-Token') || req.query.token || req.body?.token || '').trim();
+return (
+req.get('X-Admin-Token') ||
+(req.body && req.body.token) ||
+(req.query && req.query.token) ||
+''
+).trim();
 }
 
 /* ---------------------------- Admin: verify token ------------------------- */
@@ -426,24 +493,27 @@ const {
 clientName,
 clientEmail,
 clientPhone,
-clientAddress, // legacy
-currentAddress, // preferred
+clientAddress, // legacy field
+currentAddress, // NEW preferred field
 returnType,
 dependents,
 clientMessage,
 SEND_CLIENT_RECEIPT,
 clientLanguage,
-cashAdvance,
-refundMethod
+cashAdvance, // NEW
+refundMethod // NEW
 } = req.body;
 
-const lang = ['en', 'es', 'ht'].includes((clientLanguage || '').toLowerCase())
+const lang = ['en', 'es', 'ht'].includes(
+(clientLanguage || '').toLowerCase()
+)
 ? clientLanguage.toLowerCase()
 : 'en';
 
 const sendClientReceipt = SEND_CLIENT_RECEIPT !== 'false';
 
 const referenceNumber = `TL${Date.now().toString().slice(-6)}`;
+
 const addressForUsps = currentAddress || clientAddress || '';
 
 /* === Optional USPS validate for upload address (admin info only) ===== */
@@ -453,12 +523,19 @@ if (addressForUsps && process.env.USPS_USER_ID) {
 uploadUspsSuggestion = await verifyAddressWithUSPS(addressForUsps);
 }
 } catch (e) {
-console.error('❌ USPS validation for upload form failed:', e);
+console.error(
+'❌ USPS validation for upload form failed:',
+e
+);
 }
 
 /* === Google Drive upload (non-blocking on failure) ==================== */
 try {
-const folderId = await ensureClientFolder(referenceNumber, clientName, clientPhone);
+const folderId = await ensureClientFolder(
+referenceNumber,
+clientName,
+clientPhone
+);
 if (folderId) {
 await uploadFilesToDrive(folderId, req.files, {
 ref: referenceNumber,
@@ -466,7 +543,9 @@ clientName,
 clientEmail
 });
 } else {
-console.warn(`⚠️ No Drive folder created for ref ${referenceNumber}`);
+console.warn(
+`⚠️ No Drive folder created for ref ${referenceNumber}`
+);
 }
 } catch (e) {
 console.error('❌ Drive upload block failed:', e);
@@ -478,8 +557,12 @@ const timestamp = new Date().toISOString();
 const service = 'Tax Preparation — $150 Flat';
 
 const filesCount = (req.files || []).length;
-const fileNames = (req.files || []).map(f => f.originalname).join(', ');
-const filesCell = filesCount ? `${filesCount} — ${fileNames}` : fileNames;
+const fileNames = (req.files || [])
+.map(f => f.originalname)
+.join(', ');
+const filesCell = filesCount
+? `${filesCount} — ${fileNames}`
+: fileNames;
 
 const source = 'Main Upload Form';
 const last4Id = ''; // not collected here
@@ -507,18 +590,7 @@ preferredLanguage,
 message
 };
 
-const r = await fetch(UPLOAD_SHEET_URL, {
-method: 'POST',
-headers: { 'Content-Type': 'application/json' },
-body: JSON.stringify(sheetPayload)
-});
-
-const j = await r.json().catch(() => ({}));
-if (!r.ok || (j && j.ok === false)) {
-console.error('❌ Upload Sheet logger error:', j && j.error);
-} else {
-console.log('✅ Row logged to Tax Lakay - Upload Log');
-}
+await logUploadToSheet(sheetPayload);
 } catch (e) {
 console.error('❌ Failed calling Upload Sheet logger:', e);
 }
@@ -535,7 +607,9 @@ const adminEmail = {
 from: process.env.EMAIL_USER || 'lakaytax@gmail.com',
 to: adminTo,
 replyTo: clientEmail || undefined,
-subject: `📋 New Tax Document Upload - ${clientName || 'Customer'}`,
+subject: `📋 New Tax Document Upload - ${
+clientName || 'Customer'
+}`,
 html: `
 <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
 <h2 style="color: #1e63ff;">📋 New Document Upload Received</h2>
@@ -544,26 +618,47 @@ html: `
 <h3 style="margin-top: 0;">Client Information:</h3>
 <p><strong>Name:</strong> ${clientName || 'Not provided'}</p>
 <p><strong>Email:</strong> ${
-clientEmail ? `<a href="mailto:${clientEmail}">${clientEmail}</a>` : 'Not provided'
+clientEmail
+? `<a href="mailto:${clientEmail}">${clientEmail}</a>`
+: 'Not provided'
 }</p>
 <p><strong>Phone:</strong> ${
 clientPhone
-? `<a href="tel:${clientPhone.replace(/[^0-9+]/g, '')}">${clientPhone}</a>`
+? `<a href="tel:${clientPhone.replace(
+/[^0-9+]/g,
+''
+)}">${clientPhone}</a>`
 : 'Not provided'
 }</p>
-<p><strong>Return Type:</strong> ${returnType || 'Not specified'}</p>
-<p><strong>Dependents:</strong> ${dependents || '0'}</p>
-<p><strong>Address (client):</strong> ${currentAddress || clientAddress || 'Not provided'}</p>
+<p><strong>Return Type:</strong> ${
+returnType || 'Not specified'
+}</p>
+<p><strong>Dependents:</strong> ${
+dependents || '0'
+}</p>
+<p><strong>Address (client):</strong> ${
+currentAddress || clientAddress || 'Not provided'
+}</p>
 ${
 uploadUspsSuggestion && uploadUspsSuggestion.formatted
 ? `<p><strong>USPS suggested:</strong> ${uploadUspsSuggestion.formatted}</p>`
 : ''
 }
-<p><strong>Cash Advance:</strong> ${cashAdvance || 'Not specified'}</p>
-<p><strong>Refund Method:</strong> ${refundMethod || 'Not specified'}</p>
-<p><strong>Files Uploaded:</strong> ${req.files.length} files</p>
+<p><strong>Cash Advance:</strong> ${
+cashAdvance || 'Not specified'
+}</p>
+<p><strong>Refund Method:</strong> ${
+refundMethod || 'Not specified'
+}</p>
+<p><strong>Files Uploaded:</strong> ${
+req.files.length
+} files</p>
 <p><strong>Reference #:</strong> ${referenceNumber}</p>
-${clientMessage ? `<p><strong>Client Message:</strong> ${clientMessage}</p>` : ''}
+${
+clientMessage
+? `<p><strong>Client Message:</strong> ${clientMessage}</p>`
+: ''
+}
 </div>
 
 <div style="background: #dcfce7; padding: 10px; border-radius: 5px;">
@@ -573,7 +668,11 @@ ${
 req.files
 .map(
 file =>
-`<li>${file.originalname} (${(file.size / 1024 / 1024).toFixed(2)} MB)</li>`
+`<li>${file.originalname} (${(
+file.size /
+1024 /
+1024
+).toFixed(2)} MB)</li>`
 )
 .join('')
 }
@@ -651,8 +750,7 @@ If we need any additional information, we'll reach out right away.</p>
 
 <div style="background: #ffffff; padding: 15px; border-radius: 8px; border-left: 4px solid #1e63ff; margin: 15px 0;">
 <p style="margin: 0; font-weight: bold;">Your reference number is:
-<span style="color: #1e63ff;">${referenceNumber}</span>
-</p>
+<span style="color: #1e63ff;">${referenceNumber}</span></p>
 </div>
 
 <p>You can check your filing status anytime using your Reference ID at
@@ -695,8 +793,14 @@ clientEmailOptions.subject =
 try {
 await transporter.sendMail(clientEmailOptions);
 clientEmailSent = true;
-console.log('✅ Client confirmation email sent to:', clientEmail);
-console.log('📎 Files attached:', sendClientReceipt);
+console.log(
+'✅ Client confirmation email sent to:',
+clientEmail
+);
+console.log(
+'📎 Files attached:',
+sendClientReceipt
+);
 } catch (emailError) {
 console.error('❌ Failed to send client email:', emailError);
 }
@@ -756,7 +860,9 @@ uspsSuggestedAddress: uploadUspsSuggestion?.formatted || null
 });
 } catch (error) {
 console.error('❌ Upload error:', error);
-res.status(500).json({ ok: false, error: 'Upload failed: ' + error.message });
+res
+.status(500)
+.json({ ok: false, error: 'Upload failed: ' + error.message });
 }
 });
 
@@ -773,14 +879,19 @@ dl = '0'
 
 res.setHeader('Content-Type', 'application/pdf');
 const disp = dl === '1' ? 'attachment' : 'inline';
-res.setHeader('Content-Disposition', `${disp}; filename="TaxLakay-Estimate.pdf"`);
+res.setHeader(
+'Content-Disposition',
+`${disp}; filename="TaxLakay-Estimate.pdf"`
+);
 
 const doc = new PDFDocument({ size: 'LETTER', margin: 50 });
 doc.pipe(res);
 
 doc.rect(0, 0, doc.page.width, 60).fill('#1e63ff');
 doc.fillColor('white').fontSize(20).text('TAX LAKAY', 50, 20);
-doc.fillColor('white').fontSize(10).text('www.taxlakay.com', 420, 28, { align: 'right' });
+doc.fillColor('white').fontSize(10).text('www.taxlakay.com', 420, 28, {
+align: 'right'
+});
 
 const logoPath = path.join(__dirname, 'public', 'logo.png');
 if (fs.existsSync(logoPath)) {
@@ -788,7 +899,10 @@ doc.image(logoPath, doc.page.width - 120, 15, { width: 60 });
 }
 doc.moveDown(3);
 
-doc.fillColor('#1e63ff').fontSize(18).text('Refund Estimate Summary', { align: 'left' });
+doc
+.fillColor('#1e63ff')
+.fontSize(18)
+.text('Refund Estimate Summary', { align: 'left' });
 doc.moveDown(0.5);
 doc.fillColor('#111827').fontSize(12).text(`Date & Time: ${ts}`);
 doc.moveDown();
@@ -836,7 +950,10 @@ minute: '2-digit'
 res.setHeader('Content-Type', 'application/pdf');
 res.setHeader(
 'Content-Disposition',
-`attachment; filename="TaxLakay_Receipt_${String(ref).replace(/[^A-Za-z0-9_-]/g, '')}.pdf"`
+`attachment; filename="TaxLakay_Receipt_${String(ref).replace(
+/[^A-Za-z0-9_-]/g,
+''
+)}.pdf"`
 );
 
 const doc = new PDFDocument({ size: 'LETTER', margin: 48 });
@@ -846,7 +963,10 @@ const logoPath = path.join(__dirname, 'public', 'logo.png');
 if (fs.existsSync(logoPath)) {
 doc.image(logoPath, 48, 36, { width: 80 });
 }
-doc.fontSize(20).fillColor('#1e63ff').text('Tax Lakay — Upload Receipt', 140, 42);
+doc
+.fontSize(20)
+.fillColor('#1e63ff')
+.text('Tax Lakay — Upload Receipt', 140, 42);
 doc.moveDown(1.2);
 
 doc.roundedRect(48, 90, 90, 24, 12).fill('#10b981');
@@ -872,22 +992,36 @@ const rows = [
 ];
 let y = 190;
 rows.forEach(([k, v]) => {
-doc.moveTo(48, y).lineTo(doc.page.width - 48, y).strokeColor('#f1f5f9').stroke();
+doc
+.moveTo(48, y)
+.lineTo(doc.page.width - 48, y)
+.strokeColor('#f1f5f9')
+.stroke();
 y += 10;
 doc.fillColor('#64748b').fontSize(12).text(k, 48, y);
-doc.fillColor('#111827').font('Helvetica-Bold').text(v, 300, y, { align: 'right' });
+doc
+.fillColor('#111827')
+.font('Helvetica-Bold')
+.text(v, 300, y, { align: 'right' });
 doc.font('Helvetica');
 y += 22;
 });
-doc.moveTo(48, y).lineTo(doc.page.width - 48, y).strokeColor('#f1f5f9').stroke();
+doc
+.moveTo(48, y)
+.lineTo(doc.page.width - 48, y)
+.strokeColor('#f1f5f9')
+.stroke();
 
 doc
 .moveDown(2)
 .fillColor('#475569')
 .fontSize(10)
-.text('📞 (317) 935-9067 | 🌐 www.taxlakay.com | 📧 lakaytax@gmail.com', {
+.text(
+'📞 (317) 935-9067 | 🌐 www.taxlakay.com | 📧 lakaytax@gmail.com',
+{
 align: 'center'
-});
+}
+);
 doc
 .fillColor('#94a3b8')
 .text(`© ${new Date().getFullYear()} Tax Lakay. All rights reserved.`, {
@@ -994,7 +1128,10 @@ clientEmail
 }</p>
 <p style="margin:4px 0;"><strong>Phone:</strong> ${
 clientPhone
-? `<a href="tel:${clientPhone.replace(/[^0-9+]/g, '')}" style="color:#1e63ff;">${clientPhone}</a>`
+? `<a href="tel:${clientPhone.replace(
+/[^0-9+]/g,
+''
+)}" style="color:#1e63ff;">${clientPhone}</a>`
 : 'N/A'
 }</p>
 <p style="margin:4px 0;"><strong>Reference ID:</strong> <span style="font-family:monospace;">${normRef}</span></p>
@@ -1017,7 +1154,9 @@ text,
 html
 });
 
-console.log('✅ Admin SSN notification email sent to lakaytax@gmail.com');
+console.log(
+'✅ Admin SSN notification email sent to lakaytax@gmail.com'
+);
 } catch (emailErr) {
 console.error('❌ Failed to send SSN admin email:', emailErr);
 }
@@ -1053,7 +1192,13 @@ fullAddress
 } = req.body || {};
 
 // Required fields
-if (!referenceId || !clientName || !clientEmail || !routingNumber || !accountNumber) {
+if (
+!referenceId ||
+!clientName ||
+!clientEmail ||
+!routingNumber ||
+!accountNumber
+) {
 return res.status(400).json({
 ok: false,
 error: 'Missing required fields'
@@ -1061,7 +1206,11 @@ error: 'Missing required fields'
 }
 
 // Step 1: USPS suggestion if not confirmed yet
-if (currentAddress && process.env.USPS_USER_ID && addressConfirmed !== 'yes') {
+if (
+currentAddress &&
+process.env.USPS_USER_ID &&
+addressConfirmed !== 'yes'
+) {
 const usps = await verifyAddressWithUSPS(currentAddress);
 if (usps && usps.formatted) {
 const given = currentAddress.trim().toLowerCase();
@@ -1099,24 +1248,14 @@ addressConfirmed: addressConfirmed === 'yes' ? 'yes' : '',
 fullAddress: effectiveAddress
 };
 
-const sheetResp = await fetch(BANK_SHEET_URL, {
-method: 'POST',
-headers: { 'Content-Type': 'application/json' },
-body: JSON.stringify(bankPayload)
-});
-
-const sheetJson = await sheetResp.json().catch(() => ({}));
-if (!sheetResp.ok || sheetJson.ok === false) {
-console.error('Bank sheet error:', sheetJson.error || 'Unknown error');
-} else {
-console.log('✅ Row logged to Bank Info – Upload Log');
-}
+await logBankToSheet(bankPayload);
 } catch (e) {
 console.error('Bank sheet call failed:', e);
 }
 
 // Step 3: send admin email
-const mask = v => (v ? String(v).replace(/.(?=.{4})/g, '*') : '');
+const mask = v =>
+v ? String(v).replace(/.(?=.{4})/g, '*') : '';
 const maskedRouting = mask(routingNumber);
 const maskedAccount = mask(accountNumber);
 
@@ -1159,10 +1298,15 @@ clientEmail
 }</p>
 <p style="margin:4px 0;"><strong>Phone:</strong> ${
 clientPhone
-? `<a href="tel:${clientPhone.replace(/[^0-9+]/g, '')}" style="color:#1e63ff;">${clientPhone}</a>`
+? `<a href="tel:${clientPhone.replace(
+/[^0-9+]/g,
+''
+)}" style="color:#1e63ff;">${clientPhone}</a>`
 : 'N/A'
 }</p>
-<p style="margin:4px 0;"><strong>Address:</strong> ${effectiveAddress || 'N/A'}</p>
+<p style="margin:4px 0;"><strong>Address:</strong> ${
+effectiveAddress || 'N/A'
+}</p>
 </div>
 
 <div style="background:#ecfdf5;border-radius:8px;padding:14px 16px;margin-bottom:12px;">
@@ -1208,7 +1352,11 @@ const PROGRESS_FILE = path.join(PUBLIC_DIR, 'progress.json');
 function ensureProgressFile() {
 try {
 if (!fs.existsSync(PROGRESS_FILE)) {
-fs.writeFileSync(PROGRESS_FILE, JSON.stringify({}, null, 2), 'utf8');
+fs.writeFileSync(
+PROGRESS_FILE,
+JSON.stringify({}, null, 2),
+'utf8'
+);
 }
 } catch (e) {
 console.error('ensureProgressFile failed:', e);
@@ -1228,7 +1376,11 @@ return {};
 
 function writeProgress(db) {
 try {
-fs.writeFileSync(PROGRESS_FILE, JSON.stringify(db, null, 2), 'utf8');
+fs.writeFileSync(
+PROGRESS_FILE,
+JSON.stringify(db, null, 2),
+'utf8'
+);
 return true;
 } catch (e) {
 console.error('writeProgress failed:', e);
@@ -1241,7 +1393,9 @@ async function sendStatusEmail(ref, stage, note) {
 try {
 const client = findClientByRef(ref);
 if (!client || !client.email) {
-console.log(`ℹ️ No email found for ref ${ref}, skipping status email.`);
+console.log(
+`ℹ️ No email found for ref ${ref}, skipping status email.`
+);
 return;
 }
 
@@ -1338,7 +1492,9 @@ html
 };
 
 await transporter.sendMail(mailOptions);
-console.log(`📧 Status email sent to ${client.email} for ref ${ref}`);
+console.log(
+`📧 Status email sent to ${client.email} for ref ${ref}`
+);
 } catch (e) {
 console.error('sendStatusEmail failed:', e);
 }
@@ -1386,9 +1542,13 @@ return res.status(401).json({ ok: false, error: 'Unauthorized' });
 }
 const { ref, stage, note } = req.body || {};
 if (!ref || !stage)
-return res.status(400).json({ ok: false, error: 'Missing ref or stage' });
+return res
+.status(400)
+.json({ ok: false, error: 'Missing ref or stage' });
 if (!STAGES.includes(stage))
-return res.status(400).json({ ok: false, error: 'Invalid stage' });
+return res
+.status(400)
+.json({ ok: false, error: 'Invalid stage' });
 
 const key = String(ref).trim().toUpperCase();
 const db = readProgress();
@@ -1399,7 +1559,9 @@ updatedAt: new Date().toISOString()
 };
 
 if (!writeProgress(db)) {
-return res.status(500).json({ ok: false, error: 'Failed to persist' });
+return res
+.status(500)
+.json({ ok: false, error: 'Failed to persist' });
 }
 
 sendStatusEmail(key, db[key].stage, db[key].note).catch(() => {});
@@ -1434,4 +1596,4 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, '0.0.0.0', () => {
 console.log(`🚀 Tax Lakay Backend running on port ${PORT}`);
 console.log(`✅ Health check: http://localhost:${PORT}/health`);
-}
+});
