@@ -474,81 +474,54 @@ console.warn(`⚠️ No Drive folder created for ref ${referenceNumber}`);
 } catch (e) {
 console.error('❌ Drive upload block failed:', e);
 }
-
-/* === Upload Log → Apps Script (now with new fields) =================== */
+/* === Upload Log → Apps Script (WORKING + MATCHES SCRIPT) =================== */
+if (UPLOAD_SHEET_URL) {
 try {
-// Build a summary of files for the sheet
-const filesCount = (req.files || []).length;
-const fileNames = (req.files || []).map(f => f.originalname).join(', ');
-const filesCell = filesCount
-? `${filesCount} — ${fileNames}`
-: (fileNames || '');
-
-// Basic fields for the sheet row
-const timestamp = new Date().toISOString();
-const referenceId = referenceNumber;
-
-// Service: use body.service if present, otherwise default text
+// 👇 Define the service text that will go to the "Service" column
 const serviceValue =
-req.body.service || 'Tax Preparation — $150 Flat';
+returnType && returnType.trim()
+? `Tax Preparation — ${returnType.trim()}`
+: 'Tax Preparation — $150 Flat';
 
-// Where the upload came from (for your own tracking)
-const source =
-req.body.source || 'Main Upload Form';
-
-// Last 4 of ID if you ever send one with the upload
-const last4Id =
-req.body.last4Id ||
-req.body.last4 ||
-req.body.last4ID ||
-'';
-
-// Private flag and preferred language (optional)
-const isPrivate =
-req.body.private ||
-req.body.isPrivate ||
-'';
-
-const preferredLanguage =
-(clientLanguage || '').toLowerCase();
-
-const message = clientMessage || '';
-
-// Payload sent to your Apps Script (Upload Logger)
 const sheetPayload = {
-timestamp, // Timestamp
-referenceId, // Reference ID
-clientName, // Client Name
-clientEmail, // Client Email
-clientPhone, // Client Phone
-service: serviceValue, // Service
-returnType: returnType || '',
-dependents: dependents || '',
-cashAdvance: cashAdvance || '',
-refundMethod: refundMethod || '',
-currentAddress: currentAddress || clientAddress || '',
-files: filesCell, // Files summary
-source, // Source
-last4Id, // Last 4 ID
-private: isPrivate, // Private
-preferredLanguage, // Preferred Language
-message // Message
+timestamp: new Date().toISOString(), // Timestamp
+referenceId: referenceNumber, // Reference ID
+clientName: clientName || "", // Client Name
+clientEmail: clientEmail || "", // Client Email
+clientPhone: clientPhone || "", // Client Phone
+service: serviceValue, // 👈 THIS is what Apps Script reads
+returnType: returnType || "", // Return Type
+dependents: dependents || "", // Dependents
+cashAdvance: cashAdvance || "", // CashAdvance
+refundMethod: refundMethod || "", // RefundMethod
+currentAddress: currentAddress || clientAddress || "",
+filesCount: (req.files || []).length, // Files count
+fileNames: (req.files || []).map(f => f.originalname).join(", "), // Files
+source: "Upload Form", // Source
+language: lang, // PreferedLanguage
+message: clientMessage || "" // Message
 };
 
 const r = await fetch(UPLOAD_SHEET_URL, {
-method: 'POST',
-headers: { 'Content-Type': 'application/json' },
+method: "POST",
+headers: { "Content-Type": "application/json" },
 body: JSON.stringify(sheetPayload)
 });
 
-const j = await r.json().catch(() => ({}));
-if (!r.ok || (j && j.ok === false)) {
-console.error('❌ Upload Sheet logger error:', j && j.error);
+const text = await r.text();
+let j = {};
+try { j = text ? JSON.parse(text) : {}; } catch (_) {}
+
+if (!r.ok || j.ok === false) {
+console.error("❌ Upload Sheet logger error:", j.error || text);
 } else {
-console.log('✅ Row logged to Tax Lakay - Upload Log');
+console.log("✅ Upload Log row added");
 }
 } catch (e) {
-console.error('❌ Failed calling Upload Sheet logger:', e);
+console.error("❌ Failed calling Upload Sheet logger:", e);
+}
+} else {
+console.warn("⚠️ UPLOAD_SHEET_URL not set; skipping sheet log.");
 }
 const transporter = createTransporter();
 
