@@ -477,27 +477,62 @@ console.error('❌ Drive upload block failed:', e);
 
 /* === Upload Log → Apps Script (now with new fields) =================== */
 try {
+// Build a summary of files for the sheet
+const filesCount = (req.files || []).length;
+const fileNames = (req.files || []).map(f => f.originalname).join(', ');
+const filesCell = filesCount
+? `${filesCount} — ${fileNames}`
+: (fileNames || '');
+
+// Basic fields for the sheet row
+const timestamp = new Date().toISOString();
+const referenceId = referenceNumber;
+
+// Service: use body.service if present, otherwise default text
+const serviceValue =
+req.body.service || 'Tax Preparation — $150 Flat';
+
+// Where the upload came from (for your own tracking)
+const source =
+req.body.source || 'Main Upload Form';
+
+// Last 4 of ID if you ever send one with the upload
+const last4Id =
+req.body.last4Id ||
+req.body.last4 ||
+req.body.last4ID ||
+'';
+
+// Private flag and preferred language (optional)
+const isPrivate =
+req.body.private ||
+req.body.isPrivate ||
+'';
+
+const preferredLanguage =
+(clientLanguage || '').toLowerCase();
+
+const message = clientMessage || '';
+
+// Payload sent to your Apps Script (Upload Logger)
 const sheetPayload = {
-timestamp: new Date().toISOString(),
-referenceId: referenceNumber,
-clientName: clientName || '',
-clientEmail: clientEmail || '',
-clientPhone: clientPhone || '',
-service: serviceValue,
+timestamp, // Timestamp
+referenceId, // Reference ID
+clientName, // Client Name
+clientEmail, // Client Email
+clientPhone, // Client Phone
+service: serviceValue, // Service
 returnType: returnType || '',
 dependents: dependents || '',
 cashAdvance: cashAdvance || '',
 refundMethod: refundMethod || '',
 currentAddress: currentAddress || clientAddress || '',
-filesCount: filesArray.length,
-fileNames: fileNames,
-files: fileNames,
-source: 'Main Upload Form',
-last4Id: '',
-private: 'No',
-preferredLanguage: lang,
-language: lang,
-message: clientMessage || ''
+files: filesCell, // Files summary
+source, // Source
+last4Id, // Last 4 ID
+private: isPrivate, // Private
+preferredLanguage, // Preferred Language
+message // Message
 };
 
 const r = await fetch(UPLOAD_SHEET_URL, {
@@ -515,7 +550,6 @@ console.log('✅ Row logged to Tax Lakay - Upload Log');
 } catch (e) {
 console.error('❌ Failed calling Upload Sheet logger:', e);
 }
-
 const transporter = createTransporter();
 
 /* ---------------- Email to YOU (admin) ---------------- */
