@@ -12,7 +12,7 @@ const app = express();
 /* --------------------------- GOOGLE APPS SCRIPTS -------------------------- */
 /** MAIN UPLOAD LOG (Tax Lakay - Upload Log) */
 const UPLOAD_SHEET_URL =
-'https://script.google.com/macros/s/AKfycbwn4OhA9Dj-jWI5PtZZw2Y01aWdS2dTHnUuZw7d9PeS2b-0a4vfPPF8wi8Eiq6Oqmnx/exec';
+'https://script.google.com/macros/s/AKfycbwE3mqUIwT232GBlrisxD7v7fqvWeCo1Q0dO2mROJISnlxdfvR0q6EOpD_WRMEQqvA/exec';
 
 /** PRIVATE SSN LOGGER (Social Security - Upload Log) */
 const PRIVATE_SHEET_URL =
@@ -21,7 +21,7 @@ const PRIVATE_SHEET_URL =
 /** BANK INFO LOG (Bank Info – Upload Log) */
 const BANK_SHEET_URL =
 process.env.BANK_SHEET_URL ||
-'https://script.google.com/macros/s/AKfycbx3BHhG8K6YPSlcT3XK7iA4T81n7VTl-XW2AdxIMSlwgWHl7WAh0Zjf87plm1DCU7tNWQ/exec';
+'https://script.google.com/macros/s/AKfycbzduxCB__GNtK-ZKaxZPq_1KEr1xzIGssfizpA630zJAfh5bDxRX9J77MoM7wBOJjXfHQ/exec';
 
 /* --------------------------- Google Drive Setup --------------------------- */
 const DRIVE_PARENT_FOLDER_ID =
