@@ -46,7 +46,7 @@ const auth = new google.auth.JWT(
 clientEmail,
 null,
 privateKey,
-['https://www.googleapis.com/auth/drive.file']
+['https://www.googleapis.com/auth/drive'] // Expanded scope for Shared Drives
 );
 
 drive = google.drive({ version: 'v3', auth });
@@ -74,16 +74,41 @@ let folderName = `${safeRef} - ${safeName}`;
 if (safePhone) folderName += ` - ${safePhone}`;
 
 try {
+// Check if folder already exists in Shared Drive
 const listRes = await drive.files.list({
 q: `'${DRIVE_PARENT_FOLDER_ID}' in parents and mimeType = 'application/vnd.google-apps.folder' and name = '${folderName.replace(/'/g, "\\'")}' and trashed = false`,
 fields: 'files(id, name)',
-pageSize: 1
+pageSize: 1,
+supportsAllDrives: true, // Required for Shared Drives
+includeItemsFromAllDrives: true, // Required for Shared Drives
+corpora: 'drive', // Search in specific drive
+driveId: DRIVE_PARENT_FOLDER_ID // Specify the drive
 });
 
 if (listRes.data.files && listRes.data.files.length > 0) {
+console.log(`📁 Found existing Drive folder for ${ref}: ${folderName}`);
 return listRes.data.files[0].id;
 }
 
+// Create new folder in Shared Drive
+const createRes = await drive.files.create({
+requestBody: {
+name: folderName,
+mimeType: 'application/vnd.google-apps.folder',
+parents: [DRIVE_PARENT_FOLDER_ID]
+},
+supportsAllDrives: true, // Required for Shared Drives
+fields: 'id'
+});
+
+console.log(`📁 Created Drive folder for ${ref}: ${folderName}`);
+return createRes.data.id;
+} catch (e) {
+console.error('❌ ensureClientFolder failed:', e);
+
+// Fallback: Try without Shared Drive parameters if the above fails
+try {
+console.log('🔄 Trying fallback folder creation...');
 const createRes = await drive.files.create({
 requestBody: {
 name: folderName,
@@ -92,43 +117,80 @@ parents: [DRIVE_PARENT_FOLDER_ID]
 },
 fields: 'id'
 });
-
-console.log(`📁 Created Drive folder for ${ref}: ${folderName}`);
+console.log(`📁 Created Drive folder (fallback) for ${ref}: ${folderName}`);
 return createRes.data.id;
-} catch (e) {
-console.error('❌ ensureClientFolder failed:', e);
+} catch (fallbackError) {
+console.error('❌ Fallback folder creation also failed:', fallbackError);
 return null;
+}
 }
 }
 
 async function uploadFilesToDrive(folderId, files, meta = {}) {
-if (!drive || !folderId || !Array.isArray(files) || files.length === 0) return;
+if (!drive || !folderId || !Array.isArray(files) || files.length === 0) {
+console.log('📭 Skipping Drive upload - missing requirements');
+return;
+}
+
+console.log(`📤 Starting upload of ${files.length} files to Drive folder: ${folderId}`);
 
 for (const file of files) {
 try {
 const fileName = sanitizeName(file.originalname) || 'document';
-const res = await drive.files.create({
-requestBody: {
+console.log(`⬆️ Uploading file: ${fileName}`);
+
+const fileMetadata = {
 name: fileName,
 parents: [folderId],
 description: `TaxLakay upload — Ref: ${meta.ref || ''}, Name: ${
 meta.clientName || ''
 }, Email: ${meta.clientEmail || ''}`
-},
-media: {
+};
+
+const media = {
 mimeType: file.mimetype,
 body: Buffer.isBuffer(file.buffer)
 ? require('stream').Readable.from(file.buffer)
 : file.buffer
-},
+};
+
+// Try with Shared Drive support first
+const res = await drive.files.create({
+requestBody: fileMetadata,
+media: media,
+supportsAllDrives: true, // Required for Shared Drives
+fields: 'id, name, webViewLink'
+});
+
+console.log(`✅ Uploaded to Drive: ${res.data.name} (${res.data.id})`);
+console.log(`🔗 View: ${res.data.webViewLink}`);
+
+} catch (e) {
+console.error(`❌ Failed to upload file ${file.originalname}:`, e.message);
+
+// Fallback: Try without Shared Drive support
+try {
+console.log('🔄 Trying fallback upload...');
+const res = await drive.files.create({
+requestBody: fileMetadata,
+media: media,
 fields: 'id, name'
 });
-console.log(`☁️ Uploaded to Drive: ${res.data.name} (${res.data.id})`);
-} catch (e) {
-console.error('❌ Failed to upload file to Drive:', e);
+console.log(`✅ Uploaded (fallback): ${res.data.name}`);
+} catch (fallbackError) {
+console.error('❌ Fallback upload also failed:', fallbackError.message);
 }
 }
 }
+}
+
+// Export functions if using modules
+module.exports = {
+drive,
+ensureClientFolder,
+uploadFilesToDrive,
+sanitizeName
+};
 
 /* ---------------- USPS ADDRESS VALIDATION HELPER ------------------------- */
 async function verifyAddressWithUSPS(rawAddress) {
