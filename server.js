@@ -1138,11 +1138,10 @@ suggestedAddress: usps.formatted
 }
 
 const effectiveAddress = fullAddress || currentAddress || '';
-const routing= routingNumber ? String(routingNumber) '';
-const account = accountNumber ? String(accountNumber) '';
-const routing = routingNumber '';
-const account = accountNumber '';
-/* Step 2: === BANK LOG → Apps Script (FINAL, matches Apps Script) ============== */
+const routingLast4 = routingNumber ? String(routingNumber).slice(-4) : '';
+const accountLast4 = accountNumber ? String(accountNumber).slice(-4) : '';
+
+/* === BANK LOG → Apps Script (FINAL, matches Apps Script) ============== */
 if (BANK_SHEET_URL) {
 try {
 const bankPayload = {
@@ -1153,10 +1152,11 @@ clientEmail: clientEmail || '',
 clientPhone: clientPhone || '',
 currentAddress: currentAddress || '',
 bankName: bankName || '',
-routingNumber: String(routingNumber || ''),
-accountNumber: String(accountNumber || ''),
-routingNumber: routingNumber || '',
-accountNumber: accountNumber || '',
+accountType: accountType || '',
+routingNumber: routingLast4,
+routingLast4: routingLast4,
+accountNumber: accountLast4,
+accountLast4: accountLast4,
 comments: comments || '',
 addressConfirmed: addressConfirmed || '',
 fullAddress: effectiveAddress
@@ -1183,7 +1183,7 @@ console.error('❌ Bank Log failed:', e);
 } else {
 console.warn('⚠️ BANK_SHEET_URL not set; skipping bank log.');
 }
-
+  
 // Step 3: send admin email
 const mask = v => (v ? String(v).replace(/.(?=.{4})/g, '*') : '');
 const maskedRouting = mask(routingNumber);
