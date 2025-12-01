@@ -1138,8 +1138,8 @@ suggestedAddress: usps.formatted
 }
 
 const effectiveAddress = fullAddress || currentAddress || '';
-const routingLast4 = routingNumber ? String(routingNumber).slice(-4) : '';
-const accountLast4 = accountNumber ? String(accountNumber).slice(-4) : '';
+const routing = routingNumber '';
+const account = accountNumber '';
 
 /* === BANK LOG → Apps Script (FINAL, matches Apps Script) ============== */
 if (BANK_SHEET_URL) {
@@ -1152,8 +1152,8 @@ clientEmail: clientEmail || '',
 clientPhone: clientPhone || '',
 currentAddress: currentAddress || '',
 bankName: bankName || '',
-routingNumber: String(routingNumber || ''),
-accountNumber: String(accountNumber || ''),
+routingNumber: routingNumber || '',
+accountNumber: accountNumber || '',
 comments: comments || '',
 addressConfirmed: addressConfirmed || '',
 fullAddress: effectiveAddress
