@@ -1094,6 +1094,7 @@ console.error('private-info error:', err.message || err);
 return res.status(500).json({ ok: false, error: 'Server error' });
 }
 });
+
 /* ------------------------ BANK INFO (PRIVATE PAGE) ------------------------ */
 app.post('/api/bank-info', async (req, res) => {
 try {
@@ -1108,11 +1109,10 @@ accountType,
 routingNumber,
 accountNumber,
 comments,
-addressConfirmed,
-fullAddress
+addressConfirmed
 } = req.body || {};
 
-// Required fields
+// Required fields (we keep full routing & account here)
 if (!referenceId || !clientName || !clientEmail || !routingNumber || !accountNumber) {
 return res.status(400).json({
 ok: false,
@@ -1120,7 +1120,9 @@ error: 'Missing required fields'
 });
 }
 
-// Step 1: USPS suggestion if not confirmed yet
+const normRef = String(referenceId).trim().toUpperCase();
+
+// USPS suggestion if not confirmed yet (same as before)
 if (currentAddress && process.env.USPS_USER_ID && addressConfirmed !== 'yes') {
 const usps = await verifyAddressWithUSPS(currentAddress);
 if (usps && usps.formatted) {
@@ -1136,38 +1138,20 @@ suggestedAddress: usps.formatted
 }
 }
 
-const effectiveAddress = fullAddress || currentAddress || '';
-
-// ✅ FULL VALUES + LAST 4
-const fullRouting = routingNumber ? String(routingNumber) : '';
-const fullAccount = accountNumber ? String(accountNumber) : '';
-const routingLast4 = fullRouting.slice(-4);
-const accountLast4 = fullAccount.slice(-4);
-
-/* === BANK LOG → Apps Script ===================================== */
-if (BANK_SHEET_URL) {
+/* === 1) SEND FULL NUMBERS TO GOOGLE SHEET ========================== */
 try {
 const bankPayload = {
 timestamp: new Date().toISOString(),
-referenceId: referenceId || '',
-clientName: clientName || '',
-clientEmail: clientEmail || '',
-clientPhone: clientPhone || '',
-currentAddress: currentAddress || '',
-bankName: bankName || '',
-accountType: accountType || '',
-
-// ✅ Send FULL numbers here
-routingNumber: fullRouting,
-accountNumber: fullAccount,
-
-// ✅ Also send last 4 (in case Apps Script uses these)
-routingLast4: routingLast4,
-accountLast4: accountLast4,
-
-comments: comments || '',
-addressConfirmed: addressConfirmed || '',
-fullAddress: effectiveAddress
+referenceId: normRef,
+clientName,
+clientEmail,
+clientPhone,
+currentAddress,
+bankName,
+accountType,
+routingNumber, // 👈 FULL number
+accountNumber, // 👈 FULL number
+comments
 };
 
 const r = await fetch(BANK_SHEET_URL, {
@@ -1176,20 +1160,14 @@ headers: { 'Content-Type': 'application/json' },
 body: JSON.stringify(bankPayload)
 });
 
-const text = await r.text();
-let j = {};
-try { j = text ? JSON.parse(text) : {}; } catch (_) {}
-
+const j = await r.json().catch(() => ({}));
 if (!r.ok || j.ok === false) {
-console.error('❌ Bank Log logger error:', j.error || text);
+console.error('❌ Bank Log failed:', j && j.error);
 } else {
 console.log('✅ Bank Log row added');
 }
 } catch (e) {
-console.error('❌ Bank Log failed:', e);
-}
-} else {
-console.warn('⚠️ BANK_SHEET_URL not set; skipping bank log.');
+console.error('❌ Bank Log call failed:', e);
 }
 
 // Step 3: send admin email
