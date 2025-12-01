@@ -1094,7 +1094,6 @@ console.error('private-info error:', err.message || err);
 return res.status(500).json({ ok: false, error: 'Server error' });
 }
 });
-
 /* ------------------------ BANK INFO (PRIVATE PAGE) ------------------------ */
 app.post('/api/bank-info', async (req, res) => {
 try {
@@ -1199,6 +1198,7 @@ console.warn('⚠️ BANK_SHEET_URL not set; skipping bank log.');
 console.error('bank-info error:', e);
 return res.status(500).json({ ok: false, error: 'Server error' });
 }
+});
 
 // Step 3: send admin email
 const mask = v => (v ? String(v).replace(/.(?=.{4})/g, '*') : '');
