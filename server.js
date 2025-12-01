@@ -1192,14 +1192,6 @@ console.error('❌ Bank Log failed:', e);
 console.warn('⚠️ BANK_SHEET_URL not set; skipping bank log.');
 }
 
-// (keep your email-send + final res.json here unchanged)
-
-} catch (e) {
-console.error('bank-info error:', e);
-return res.status(500).json({ ok: false, error: 'Server error' });
-}
-});
-
 // Step 3: send admin email
 const mask = v => (v ? String(v).replace(/.(?=.{4})/g, '*') : '');
 const maskedRouting = mask(routingNumber);
