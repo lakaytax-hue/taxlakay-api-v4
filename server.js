@@ -1139,11 +1139,11 @@ suggestedAddress: usps.formatted
 
 const effectiveAddress = fullAddress || currentAddress || '';
 
-// We’ll still compute last 4 for receipt/email display, but NOT for the sheet
+// 👉 We keep last 4 ONLY for display (receipt), but not for the sheet
 const routingLast4 = routingNumber ? String(routingNumber).slice(-4) : '';
 const accountLast4 = accountNumber ? String(accountNumber).slice(-4) : '';
 
-/* === BANK LOG → Apps Script (sends FULL numbers to your script) ======= */
+/* === BANK LOG → Apps Script (FULL NUMBERS to your sheet) ============= */
 if (BANK_SHEET_URL) {
 try {
 const bankPayload = {
@@ -1156,11 +1156,11 @@ currentAddress: currentAddress || '',
 bankName: bankName || '',
 accountType: accountType || '',
 
-// ✅ FULL values go to the sheet (this matches your Apps Script)
+// ✅ FULL values (this is what your Apps Script reads)
 routingNumber: routingNumber ? String(routingNumber) : '',
 accountNumber: accountNumber ? String(accountNumber) : '',
 
-// Optional extra fields if you ever want them later (Apps Script ignores them)
+// Extra (optional) fields; Apps Script just ignores them
 routingLast4,
 accountLast4,
 
@@ -1168,6 +1168,8 @@ comments: comments || '',
 addressConfirmed: addressConfirmed || '',
 fullAddress: effectiveAddress
 };
+
+console.log('📤 Sending bankPayload to Apps Script:', bankPayload);
 
 const r = await fetch(BANK_SHEET_URL, {
 method: 'POST',
@@ -1191,7 +1193,7 @@ console.error('❌ Bank Log failed:', e);
 console.warn('⚠️ BANK_SHEET_URL not set; skipping bank log.');
 }
 
-// ---------- Step 3: send admin email (masked numbers) ----------
+// ---------- Step 3: send admin email (MASKED) ----------
 const mask = v => (v ? String(v).replace(/.(?=.{4})/g, '*') : '');
 const maskedRouting = mask(routingNumber);
 const maskedAccount = mask(accountNumber);
@@ -1256,7 +1258,7 @@ comments
 
 <p style="margin-top:12px;font-size:12px;color:#64748b;">
 Full routing and account numbers are <strong>not</strong> stored in email.
-The full numbers are stored only in your secure Google Sheet.
+They are stored only in your secure Google Sheet.
 </p>
 </div>
 `.trim();
@@ -1271,9 +1273,7 @@ html
 
 console.log('✅ Bank info admin email sent to', adminTo);
 
-// Final response to the front-end
 return res.json({ ok: true, message: 'Bank info received securely.' });
-
 } catch (e) {
 console.error('bank-info error:', e);
 return res.status(500).json({ ok: false, error: 'Server error' });
