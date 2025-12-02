@@ -1160,10 +1160,6 @@ accountType: accountType || '',
 routingNumber: routingNumber ? String(routingNumber) : '',
 accountNumber: accountNumber ? String(accountNumber) : '',
 
-// Extra (optional) fields; Apps Script just ignores them
-routingLast4,
-accountLast4,
-
 comments: comments || '',
 addressConfirmed: addressConfirmed || '',
 fullAddress: effectiveAddress
