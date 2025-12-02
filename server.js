@@ -21,7 +21,7 @@ const PRIVATE_SHEET_URL =
 /** BANK INFO LOG (Bank Info – Upload Log) */
 const BANK_SHEET_URL =
 process.env.BANK_SHEET_URL ||
-'https://script.google.com/macros/s/AKfycbzduxCB__GNtK-ZKaxZPq_1KEr1xzIGssfizpA630zJAfh5bDxRX9J77MoM7wBOJjXfHQ/exec';
+'https://script.google.com/macros/s/AKfycbxGQdl6L5V-Ik5dqDKI0yTCyhl-k6i8duZqIqN_YWa7EQm1gr7sQhzE9YU9EAEUSYQvSw/exec';
 
 /* --------------------------- Google Drive Setup --------------------------- */
 const DRIVE_PARENT_FOLDER_ID =
