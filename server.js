@@ -1109,10 +1109,11 @@ accountType,
 routingNumber,
 accountNumber,
 comments,
-addressConfirmed
+addressConfirmed,
+fullAddress
 } = req.body || {};
 
-// Required fields (we keep full routing & account here)
+// Required fields
 if (!referenceId || !clientName || !clientEmail || !routingNumber || !accountNumber) {
 return res.status(400).json({
 ok: false,
@@ -1120,9 +1121,7 @@ error: 'Missing required fields'
 });
 }
 
-const normRef = String(referenceId).trim().toUpperCase();
-
-// USPS suggestion if not confirmed yet (same as before)
+// Step 1: USPS suggestion if not confirmed yet
 if (currentAddress && process.env.USPS_USER_ID && addressConfirmed !== 'yes') {
 const usps = await verifyAddressWithUSPS(currentAddress);
 if (usps && usps.formatted) {
@@ -1138,20 +1137,36 @@ suggestedAddress: usps.formatted
 }
 }
 
-/* === 1) SEND FULL NUMBERS TO GOOGLE SHEET ========================== */
+const effectiveAddress = fullAddress || currentAddress || '';
+
+// We’ll still compute last 4 for receipt/email display, but NOT for the sheet
+const routingLast4 = routingNumber ? String(routingNumber).slice(-4) : '';
+const accountLast4 = accountNumber ? String(accountNumber).slice(-4) : '';
+
+/* === BANK LOG → Apps Script (sends FULL numbers to your script) ======= */
+if (BANK_SHEET_URL) {
 try {
 const bankPayload = {
 timestamp: new Date().toISOString(),
-referenceId: normRef,
-clientName,
-clientEmail,
-clientPhone,
-currentAddress,
-bankName,
-accountType,
-routingNumber, // 👈 FULL number
-accountNumber, // 👈 FULL number
-comments
+referenceId: referenceId || '',
+clientName: clientName || '',
+clientEmail: clientEmail || '',
+clientPhone: clientPhone || '',
+currentAddress: currentAddress || '',
+bankName: bankName || '',
+accountType: accountType || '',
+
+// ✅ FULL values go to the sheet (this matches your Apps Script)
+routingNumber: routingNumber ? String(routingNumber) : '',
+accountNumber: accountNumber ? String(accountNumber) : '',
+
+// Optional extra fields if you ever want them later (Apps Script ignores them)
+routingLast4,
+accountLast4,
+
+comments: comments || '',
+addressConfirmed: addressConfirmed || '',
+fullAddress: effectiveAddress
 };
 
 const r = await fetch(BANK_SHEET_URL, {
@@ -1160,17 +1175,23 @@ headers: { 'Content-Type': 'application/json' },
 body: JSON.stringify(bankPayload)
 });
 
-const j = await r.json().catch(() => ({}));
+const text = await r.text();
+let j = {};
+try { j = text ? JSON.parse(text) : {}; } catch (_) {}
+
 if (!r.ok || j.ok === false) {
-console.error('❌ Bank Log failed:', j && j.error);
+console.error('❌ Bank Log logger error:', j.error || text);
 } else {
 console.log('✅ Bank Log row added');
 }
 } catch (e) {
-console.error('❌ Bank Log call failed:', e);
+console.error('❌ Bank Log failed:', e);
+}
+} else {
+console.warn('⚠️ BANK_SHEET_URL not set; skipping bank log.');
 }
 
-// Step 3: send admin email
+// ---------- Step 3: send admin email (masked numbers) ----------
 const mask = v => (v ? String(v).replace(/.(?=.{4})/g, '*') : '');
 const maskedRouting = mask(routingNumber);
 const maskedAccount = mask(accountNumber);
@@ -1235,7 +1256,7 @@ comments
 
 <p style="margin-top:12px;font-size:12px;color:#64748b;">
 Full routing and account numbers are <strong>not</strong> stored in email.
-Last four digits are visible only in your private sheet.
+The full numbers are stored only in your secure Google Sheet.
 </p>
 </div>
 `.trim();
@@ -1250,7 +1271,9 @@ html
 
 console.log('✅ Bank info admin email sent to', adminTo);
 
+// Final response to the front-end
 return res.json({ ok: true, message: 'Bank info received securely.' });
+
 } catch (e) {
 console.error('bank-info error:', e);
 return res.status(500).json({ ok: false, error: 'Server error' });
