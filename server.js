@@ -63,12 +63,8 @@ if (!str) return '';
 return String(str).replace(/[<>:"/\\|?*]+/g, '').trim();
 }
 
-/* --------------------------- Enhanced Folder Creation --------------------------- */
 async function ensureClientFolder(ref, clientName, clientPhone) {
-if (!drive || !DRIVE_PARENT_FOLDER_ID) {
-console.log('❌ Drive not configured properly');
-return null;
-}
+if (!drive || !DRIVE_PARENT_FOLDER_ID) return null;
 
 const safeRef = sanitizeName(ref);
 const safeName = sanitizeName(clientName || 'Client');
@@ -77,50 +73,43 @@ const safePhone = sanitizeName(clientPhone || '');
 let folderName = `${safeRef} - ${safeName}`;
 if (safePhone) folderName += ` - ${safePhone}`;
 
-console.log(`📁 Creating/verifying folder: ${folderName}`);
-
 try {
-// Search for existing folder in Shared Drive
-const searchResponse = await drive.files.list({
-q: `name='${folderName.replace(/'/g, "\\'")}' and '${DRIVE_PARENT_FOLDER_ID}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`,
+// Check if folder already exists in Shared Drive
+const listRes = await drive.files.list({
+q: `'${DRIVE_PARENT_FOLDER_ID}' in parents and mimeType = 'application/vnd.google-apps.folder' and name = '${folderName.replace(/'/g, "\\'")}' and trashed = false`,
 fields: 'files(id, name)',
-supportsAllDrives: true,
-includeItemsFromAllDrives: true,
-corpora: 'drive',
-driveId: DRIVE_PARENT_FOLDER_ID
+pageSize: 1,
+supportsAllDrives: true, // Required for Shared Drives
+includeItemsFromAllDrives: true, // Required for Shared Drives
+corpora: 'drive', // Search in specific drive
+driveId: DRIVE_PARENT_FOLDER_ID // Specify the drive
 });
 
-if (searchResponse.data.files && searchResponse.data.files.length > 0) {
-const folderId = searchResponse.data.files[0].id;
-console.log(`✅ Found existing folder: ${folderName} (${folderId})`);
-return folderId;
+if (listRes.data.files && listRes.data.files.length > 0) {
+console.log(`📁 Found existing Drive folder for ${ref}: ${folderName}`);
+return listRes.data.files[0].id;
 }
 
 // Create new folder in Shared Drive
-const folderMetadata = {
+const createRes = await drive.files.create({
+requestBody: {
 name: folderName,
 mimeType: 'application/vnd.google-apps.folder',
 parents: [DRIVE_PARENT_FOLDER_ID]
-};
-
-const createResponse = await drive.files.create({
-requestBody: folderMetadata,
-supportsAllDrives: true,
-fields: 'id, name, webViewLink'
+},
+supportsAllDrives: true, // Required for Shared Drives
+fields: 'id'
 });
 
-console.log(`✅ Created new folder: ${folderName}`);
-console.log(`🔗 Folder URL: ${createResponse.data.webViewLink}`);
+console.log(`📁 Created Drive folder for ${ref}: ${folderName}`);
+return createRes.data.id;
+} catch (e) {
+console.error('❌ ensureClientFolder failed:', e);
 
-return createResponse.data.id;
-
-} catch (error) {
-console.error('❌ Folder creation failed:', error.message);
-
-// Fallback: Try without Shared Drive parameters
+// Fallback: Try without Shared Drive parameters if the above fails
 try {
 console.log('🔄 Trying fallback folder creation...');
-const createResponse = await drive.files.create({
+const createRes = await drive.files.create({
 requestBody: {
 name: folderName,
 mimeType: 'application/vnd.google-apps.folder',
@@ -128,177 +117,80 @@ parents: [DRIVE_PARENT_FOLDER_ID]
 },
 fields: 'id'
 });
-console.log(`✅ Created folder (fallback): ${folderName}`);
-return createResponse.data.id;
+console.log(`📁 Created Drive folder (fallback) for ${ref}: ${folderName}`);
+return createRes.data.id;
 } catch (fallbackError) {
-console.error('❌ Fallback folder creation failed:', fallbackError.message);
+console.error('❌ Fallback folder creation also failed:', fallbackError);
 return null;
 }
 }
 }
 
-/* --------------------------- Fixed Google Drive Upload --------------------------- */
 async function uploadFilesToDrive(folderId, files, meta = {}) {
 if (!drive || !folderId || !Array.isArray(files) || files.length === 0) {
 console.log('📭 Skipping Drive upload - missing requirements');
-return false;
+return;
 }
 
 console.log(`📤 Starting upload of ${files.length} files to Drive folder: ${folderId}`);
 
-let uploadCount = 0;
-const uploadResults = [];
-
 for (const file of files) {
 try {
-const fileName = sanitizeName(file.originalname) || `document-${Date.now()}`;
-console.log(`⬆️ Uploading file: ${fileName} (${file.size} bytes)`);
+const fileName = sanitizeName(file.originalname) || 'document';
+console.log(`⬆️ Uploading file: ${fileName}`);
 
-// Prepare file metadata
 const fileMetadata = {
 name: fileName,
 parents: [folderId],
-description: `TaxLakay - ${meta.clientName || 'Client'} | Ref: ${meta.ref || 'N/A'} | Uploaded: ${new Date().toISOString()}`
+description: `TaxLakay upload — Ref: ${meta.ref || ''}, Name: ${
+meta.clientName || ''
+}, Email: ${meta.clientEmail || ''}`
 };
 
-// Prepare media content
-let media;
-if (file.buffer) {
-media = {
-mimeType: file.mimetype || 'application/octet-stream',
-body: require('stream').Readable.from(file.buffer)
+const media = {
+mimeType: file.mimetype,
+body: Buffer.isBuffer(file.buffer)
+? require('stream').Readable.from(file.buffer)
+: file.buffer
 };
-} else if (file.path) {
-// If using disk storage instead of memory storage
-const fs = require('fs');
-media = {
-mimeType: file.mimetype || 'application/octet-stream',
-body: fs.createReadStream(file.path)
-};
-} else {
-console.log('❌ No file content found for:', fileName);
-continue;
-}
 
-// Upload to Google Drive with Shared Drive support
-const response = await drive.files.create({
+// Try with Shared Drive support first
+const res = await drive.files.create({
 requestBody: fileMetadata,
 media: media,
-supportsAllDrives: true, // Crucial for Shared Drives
-fields: 'id, name, webViewLink, mimeType, size'
+supportsAllDrives: true, // Required for Shared Drives
+fields: 'id, name, webViewLink'
 });
 
-console.log(`✅ Uploaded to Drive: ${response.data.name}`);
-console.log(`🔗 View: ${response.data.webViewLink}`);
+console.log(`✅ Uploaded to Drive: ${res.data.name} (${res.data.id})`);
+console.log(`🔗 View: ${res.data.webViewLink}`);
 
-uploadCount++;
-uploadResults.push({
-name: response.data.name,
-id: response.data.id,
-link: response.data.webViewLink,
-size: response.data.size
-});
+} catch (e) {
+console.error(`❌ Failed to upload file ${file.originalname}:`, e.message);
 
-} catch (error) {
-console.error(`❌ Failed to upload file ${file.originalname}:`, error.message);
-
-// More detailed error information
-if (error.errors) {
-error.errors.forEach(err => {
-console.error(` - ${err.message} (${err.domain})`);
-});
-}
-}
-}
-
-console.log(`📊 Upload summary: ${uploadCount}/${files.length} files successful`);
-return uploadResults;
-}
-/* --------------------------- Complete Upload Handler --------------------------- */
-async function handleClientUpload(uploadData) {
-console.log('🚀 Starting complete client upload process...');
-
-// Validate required data
-if (!uploadData.referenceId || !uploadData.clientName) {
-console.log('❌ Missing required data: referenceId and clientName');
-return { success: false, error: 'Missing required client data' };
-}
-
-if (!uploadData.files || uploadData.files.length === 0) {
-console.log('❌ No files provided for upload');
-return { success: false, error: 'No files provided' };
-}
-
+// Fallback: Try without Shared Drive support
 try {
-// 1. Create folder in Google Drive
-console.log('📁 Step 1: Creating client folder...');
-const folderId = await ensureClientFolder(
-uploadData.referenceId,
-uploadData.clientName,
-uploadData.clientPhone
-);
-
-if (!folderId) {
-console.log('❌ Failed to create Drive folder');
-return { success: false, error: 'Drive folder creation failed' };
-}
-
-// 2. Upload files to the created folder
-console.log('📤 Step 2: Uploading files to Drive...');
-const uploadResults = await uploadFilesToDrive(folderId, uploadData.files, {
-ref: uploadData.referenceId,
-clientName: uploadData.clientName,
-clientEmail: uploadData.clientEmail,
-clientPhone: uploadData.clientPhone
+console.log('🔄 Trying fallback upload...');
+const res = await drive.files.create({
+requestBody: fileMetadata,
+media: media,
+fields: 'id, name'
 });
-
-// 3. Log to Google Sheets
-console.log('📊 Step 3: Logging to Google Sheets...');
-const fileNames = uploadData.files.map(f => f.originalname).join(', ');
-
-const logSuccess = await logUploadToSheet({
-referenceId: uploadData.referenceId,
-clientName: uploadData.clientName,
-clientEmail: uploadData.clientEmail,
-clientPhone: uploadData.clientPhone,
-service: uploadData.service,
-returnType: uploadData.returnType,
-dependents: uploadData.dependents,
-cashAdvance: uploadData.cashAdvance,
-refundMethod: uploadData.refundMethod,
-currentAddress: uploadData.currentAddress,
-files: fileNames,
-source: uploadData.source,
-last4Id: uploadData.last4Id,
-private: uploadData.private,
-preferredLanguage: uploadData.preferredLanguage,
-message: `Drive Folder: ${folderId} | Files: ${uploadResults ? uploadResults.length : 0} uploaded`
-});
-
-// 4. Return results
-const result = {
-success: true,
-folderId: folderId,
-uploadedFiles: uploadResults || [],
-filesCount: uploadResults ? uploadResults.length : 0,
-sheetLogged: logSuccess,
-timestamp: new Date().toISOString()
-};
-
-console.log('✅ Upload process completed successfully');
-console.log('📊 Results:', JSON.stringify(result, null, 2));
-
-return result;
-
-} catch (error) {
-console.error('❌ Upload process failed:', error);
-return {
-success: false,
-error: error.message,
-timestamp: new Date().toISOString()
-};
+console.log(`✅ Uploaded (fallback): ${res.data.name}`);
+} catch (fallbackError) {
+console.error('❌ Fallback upload also failed:', fallbackError.message);
 }
 }
+}
+}
+
+// Export functions if using modules
+module.exports = {
+drive,
+ensureClientFolder,
+uploadFilesToDrive,
+sanitizeName
+};
 
 /* ---------------- USPS ADDRESS VALIDATION HELPER ------------------------- */
 async function verifyAddressWithUSPS(rawAddress) {
