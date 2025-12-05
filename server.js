@@ -254,6 +254,33 @@ return null;
 }
 }
 
+// =============== USPS ADDRESS VALIDATION ENDPOINT ===============
+app.post('/api/usps/validate', async (req, res) => {
+try {
+const { address } = req.body;
+if (!address) {
+return res.status(400).json({ ok: false, error: 'Address is required' });
+}
+
+const result = await verifyAddressWithUSPS(address);
+
+if (!result) {
+return res.status(400).json({ ok: false, error: 'Invalid or unrecognized address' });
+}
+
+return res.json({
+ok: true,
+result
+});
+} catch (err) {
+console.error('USPS route error:', err);
+return res.status(500).json({
+ok: false,
+error: 'Server USPS error'
+});
+}
+});
+
 /* ----------------------------- CORS (unified) ----------------------------- */
 const ALLOWED_HOSTS = new Set([
 'www.taxlakay.com',
