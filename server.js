@@ -568,6 +568,45 @@ originalAddress: addressForUsps,
 message: 'USPS suggested a different address. Please confirm before continuing.'
 });
 }
+
+// ---- Decide if we should show USPS suggestion to the customer ----
+try {
+// Normalize suggestion into a simple string
+let suggestedAddress = '';
+
+if (uploadUspsSuggestion) {
+if (typeof uploadUspsSuggestion === 'string') {
+suggestedAddress = uploadUspsSuggestion.trim();
+} else if (uploadUspsSuggestion.formatted) {
+// in case verifyAddressWithUSPS returns { formatted: '...' }
+suggestedAddress = String(uploadUspsSuggestion.formatted).trim();
+}
+}
+
+const originalAddress = (addressForUsps || '').trim();
+const addressConfirmedFlag = String(req.body.addressConfirmed || '')
+.toLowerCase()
+.trim();
+
+const alreadyConfirmed = addressConfirmedFlag === 'yes';
+
+// If USPS has a different suggestion and customer has NOT confirmed yet,
+// send it back to the front-end instead of finishing the upload.
+if (
+suggestedAddress &&
+suggestedAddress !== originalAddress &&
+!alreadyConfirmed
+) {
+return res.status(200).json({
+ok: false,
+type: 'address_mismatch',
+suggestedAddress
+});
+}
+} catch (err) {
+console.error('USPS suggestion decision failed:', err);
+// continue with normal flow if something goes wrong here
+}
   
 /* === Google Drive upload (non-blocking on failure) ==================== */
 try {
