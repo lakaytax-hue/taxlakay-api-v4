@@ -538,16 +538,37 @@ const referenceNumber = `TL${Date.now().toString().slice(-6)}`;
 
 const addressForUsps = currentAddress || clientAddress || '';
 
-/* === Optional USPS validate for upload address (admin info only) ===== */
+/* --- Optional USPS validate for upload address (client + admin) --- */
 let uploadUspsSuggestion = null;
+
 try {
 if (addressForUsps && process.env.USPS_USER_ID) {
 uploadUspsSuggestion = await verifyAddressWithUSPS(addressForUsps);
 }
 } catch (e) {
-console.error('❌ USPS validation for upload form failed:', e);
+console.error('X USPS validation for upload form failed:', e);
 }
 
+// If USPS suggested an address and the client has NOT confirmed yet,
+// send the suggestion back to the browser instead of finishing the upload.
+const addressConfirmed =
+(req.body.addressConfirmed || req.body.address_confirmed || '').toLowerCase();
+
+if (uploadUspsSuggestion && addressConfirmed !== 'yes') {
+const suggestedAddress =
+typeof uploadUspsSuggestion === 'string'
+? uploadUspsSuggestion
+: (uploadUspsSuggestion.formatted || '');
+
+return res.status(200).json({
+ok: false,
+type: 'address_mismatch',
+suggestedAddress,
+originalAddress: addressForUsps,
+message: 'USPS suggested a different address. Please confirm before continuing.'
+});
+}
+  
 /* === Google Drive upload (non-blocking on failure) ==================== */
 try {
 const folderId = await ensureClientFolder(referenceNumber, clientName, clientPhone);
