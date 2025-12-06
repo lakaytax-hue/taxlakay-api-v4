@@ -24,9 +24,7 @@ process.env.BANK_SHEET_URL ||
 'https://script.google.com/macros/s/AKfycbxGQdl6L5V-Ik5dqDKI0yTCyhl-k6i8duZqIqN_YWa7EQm1gr7sQhzE9YU9EAEUSYQvSw/exec';
 
 /* --------------------------- Google Drive Setup --------------------------- */
-const DRIVE_PARENT_FOLDER_ID =
-process.env.GOOGLE_DRIVE_PARENT_FOLDER_ID ||
-'16tx8uhyrq79K481-2Ey1SZz-ScRb5EJh';
+const DRIVE_PARENT_FOLDER_ID = process.env.GOOGLE_DRIVE_PARENT_FOLDER_ID || '16tx8uhyrq79K481-2Ey1SZz-ScRb5EJh';
 
 let drive = null;
 
@@ -46,13 +44,13 @@ const auth = new google.auth.JWT(
 clientEmail,
 null,
 privateKey,
-['https://www.googleapis.com/auth/drive'] // Expanded scope for Shared Drives
+['https://www.googleapis.com/auth/drive'] // Full scope for Shared Drives
 );
 
 drive = google.drive({ version: 'v3', auth });
-console.log('✅ Google Drive client initialized');
+console.log(`✅ Google Drive client initialized for service account: ${clientEmail}`);
 } catch (e) {
-console.error('❌ Failed to init Google Drive client:', e);
+console.error('❌ Failed to init Google Drive client:', e.message);
 drive = null;
 }
 })();
@@ -64,7 +62,10 @@ return String(str).replace(/[<>:"/\\|?*]+/g, '').trim();
 }
 
 async function ensureClientFolder(ref, clientName, clientPhone) {
-if (!drive || !DRIVE_PARENT_FOLDER_ID) return null;
+if (!drive || !DRIVE_PARENT_FOLDER_ID) {
+console.error('❌ Drive client not initialized or missing folder ID');
+return null;
+}
 
 const safeRef = sanitizeName(ref);
 const safeName = sanitizeName(clientName || 'Client');
@@ -73,123 +74,170 @@ const safePhone = sanitizeName(clientPhone || '');
 let folderName = `${safeRef} - ${safeName}`;
 if (safePhone) folderName += ` - ${safePhone}`;
 
+console.log(`📁 Ensuring folder exists: "${folderName}"`);
+
 try {
-// Check if folder already exists in Shared Drive
+// Check if folder already exists
 const listRes = await drive.files.list({
 q: `'${DRIVE_PARENT_FOLDER_ID}' in parents and mimeType = 'application/vnd.google-apps.folder' and name = '${folderName.replace(/'/g, "\\'")}' and trashed = false`,
 fields: 'files(id, name)',
 pageSize: 1,
-supportsAllDrives: true, // Required for Shared Drives
-includeItemsFromAllDrives: true, // Required for Shared Drives
-corpora: 'drive', // Search in specific drive
-driveId: DRIVE_PARENT_FOLDER_ID // Specify the drive
+supportsAllDrives: true,
+includeItemsFromAllDrives: true,
 });
 
 if (listRes.data.files && listRes.data.files.length > 0) {
-console.log(`📁 Found existing Drive folder for ${ref}: ${folderName}`);
+console.log(`✅ Found existing folder: ${listRes.data.files[0].name}`);
 return listRes.data.files[0].id;
 }
 
-// Create new folder in Shared Drive
+// Create new folder
 const createRes = await drive.files.create({
 requestBody: {
 name: folderName,
 mimeType: 'application/vnd.google-apps.folder',
 parents: [DRIVE_PARENT_FOLDER_ID]
 },
-supportsAllDrives: true, // Required for Shared Drives
-fields: 'id'
+supportsAllDrives: true,
+fields: 'id, name'
 });
 
-console.log(`📁 Created Drive folder for ${ref}: ${folderName}`);
+console.log(`✅ Created new folder: ${createRes.data.name}`);
 return createRes.data.id;
-} catch (e) {
-console.error('❌ ensureClientFolder failed:', e);
 
-// Fallback: Try without Shared Drive parameters if the above fails
-try {
-console.log('🔄 Trying fallback folder creation...');
-const createRes = await drive.files.create({
-requestBody: {
-name: folderName,
-mimeType: 'application/vnd.google-apps.folder',
-parents: [DRIVE_PARENT_FOLDER_ID]
-},
-fields: 'id'
-});
-console.log(`📁 Created Drive folder (fallback) for ${ref}: ${folderName}`);
-return createRes.data.id;
-} catch (fallbackError) {
-console.error('❌ Fallback folder creation also failed:', fallbackError);
-return null;
+} catch (error) {
+console.error('❌ Error creating folder:', error.message);
+
+if (error.code === 403) {
+console.error(` Permission denied for service account: ${process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL}`);
+console.error(` ⚠️ You must change the service account role from "Viewer" to "Content manager" in the Shared Drive settings.`);
 }
+
+return null;
 }
 }
 
 async function uploadFilesToDrive(folderId, files, meta = {}) {
-if (!drive || !folderId || !Array.isArray(files) || files.length === 0) {
-console.log('📭 Skipping Drive upload - missing requirements');
+if (!drive || !folderId) {
+console.log('❌ Drive client not ready or missing folder ID');
 return;
 }
 
-console.log(`📤 Starting upload of ${files.length} files to Drive folder: ${folderId}`);
+if (!Array.isArray(files) || files.length === 0) {
+console.log('📭 No files to upload');
+return;
+}
+
+console.log(`📤 Uploading ${files.length} file(s) to folder ${folderId}`);
+
+const uploadResults = [];
 
 for (const file of files) {
 try {
-const fileName = sanitizeName(file.originalname) || 'document';
-console.log(`⬆️ Uploading file: ${fileName}`);
+const fileName = sanitizeName(file.originalname) || `document_${Date.now()}`;
+console.log(`⬆️ Uploading: ${fileName}`);
 
 const fileMetadata = {
 name: fileName,
 parents: [folderId],
-description: `TaxLakay upload — Ref: ${meta.ref || ''}, Name: ${
-meta.clientName || ''
-}, Email: ${meta.clientEmail || ''}`
+description: `TaxLakay upload — Client: ${meta.clientName || ''}, Ref: ${meta.ref || ''}`
 };
 
 const media = {
-mimeType: file.mimetype,
+mimeType: file.mimetype || 'application/octet-stream',
 body: Buffer.isBuffer(file.buffer)
 ? require('stream').Readable.from(file.buffer)
-: file.buffer
+: (file.stream || require('fs').createReadStream(file.path))
 };
 
-// Try with Shared Drive support first
-const res = await drive.files.create({
+const result = await drive.files.create({
 requestBody: fileMetadata,
 media: media,
-supportsAllDrives: true, // Required for Shared Drives
-fields: 'id, name, webViewLink'
+supportsAllDrives: true,
+fields: 'id, name, webViewLink, size',
 });
 
-console.log(`✅ Uploaded to Drive: ${res.data.name} (${res.data.id})`);
-console.log(`🔗 View: ${res.data.webViewLink}`);
+console.log(`✅ Uploaded: ${result.data.name} (${result.data.size ? (result.data.size / 1024).toFixed(2) + 'KB' : 'N/A'})`);
+uploadResults.push({
+success: true,
+name: result.data.name,
+id: result.data.id,
+link: result.data.webViewLink,
+size: result.data.size
+});
 
-} catch (e) {
-console.error(`❌ Failed to upload file ${file.originalname}:`, e.message);
+} catch (error) {
+console.error(`❌ Failed to upload ${file.originalname}:`, error.message);
 
-// Fallback: Try without Shared Drive support
+if (error.message.includes('insufficientFilePermissions')) {
+console.error(' Service account needs "Content manager" role in Shared Drive');
+}
+
+uploadResults.push({
+success: false,
+name: file.originalname,
+error: error.message
+});
+}
+}
+
+return uploadResults;
+}
+
+// Verification function
+async function verifyDriveSetup() {
+console.log('🔍 Verifying Google Drive setup...');
+
+if (!drive) {
+console.log('❌ Drive client not initialized');
+return false;
+}
+
 try {
-console.log('🔄 Trying fallback upload...');
-const res = await drive.files.create({
-requestBody: fileMetadata,
-media: media,
-fields: 'id, name'
+// Test access to the Shared Drive folder
+const folderInfo = await drive.files.get({
+fileId: DRIVE_PARENT_FOLDER_ID,
+fields: 'id, name, mimeType, capabilities',
+supportsAllDrives: true,
 });
-console.log(`✅ Uploaded (fallback): ${res.data.name}`);
-} catch (fallbackError) {
-console.error('❌ Fallback upload also failed:', fallbackError.message);
+
+console.log(`✅ Connected to folder: ${folderInfo.data.name}`);
+
+// Check if service account can create files
+if (!folderInfo.data.capabilities.canAddChildren) {
+console.log('❌ Service account cannot add files to this folder');
+console.log(' Current role: Viewer (needs to be Content manager or Contributor)');
+return false;
 }
-}
+
+console.log('✅ Service account has write permissions');
+return true;
+
+} catch (error) {
+console.error('❌ Verification failed:', error.message);
+return false;
 }
 }
 
-// Export functions if using modules
+// Initialize and verify on server start
+setTimeout(async () => {
+if (drive) {
+const isReady = await verifyDriveSetup();
+if (isReady) {
+console.log('🚀 Google Drive is ready for client uploads!');
+} else {
+console.log('⚠️ Google Drive needs configuration attention');
+}
+}
+}, 1000);
+
 module.exports = {
 drive,
 ensureClientFolder,
 uploadFilesToDrive,
-sanitizeName
+sanitizeName,
+verifyDriveSetup,
+DRIVE_PARENT_FOLDER_ID,
 };
 
 /* ---------------- USPS ADDRESS VALIDATION HELPER ------------------------- */
