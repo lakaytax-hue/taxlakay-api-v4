@@ -240,94 +240,45 @@ verifyDriveSetup,
 DRIVE_PARENT_FOLDER_ID,
 };
 
-/* ---------------- USPS ADDRESS VALIDATION HELPER ------------------------- */
-async function verifyAddressWithUSPS(rawAddress) {
+/* === Optional USPS validate for upload address (customer-facing + admin) === */
+let uploadUspsSuggestion = null;
+
+// Has the customer already confirmed the address in a previous submit?
+const addressConfirmed = (req.body.addressConfirmed || '').toLowerCase();
+
 try {
-const userId = process.env.USPS_USER_ID;
-if (!userId || !rawAddress) return null;
+// Only call USPS if:
+// - we have an address
+// - USPS USER ID is configured
+// - customer has NOT confirmed yet
+if (addressForUsps && process.env.USPS_USER_ID && addressConfirmed !== 'yes') {
+uploadUspsSuggestion = await verifyAddressWithUSPS(addressForUsps);
 
-const parts = String(rawAddress).split(',');
-if (parts.length < 3) return null;
+// Normalize the suggestion string
+const suggested =
+uploadUspsSuggestion &&
+(uploadUspsSuggestion.formatted || uploadUspsSuggestion.toString()).trim();
 
-const street = (parts[0] || '').trim();
-const city = (parts[1] || '').trim();
-const stateZip = (parts[2] || '').trim().split(/\s+/);
-const state = stateZip[0] || '';
-const zip5 = (stateZip[1] || '').slice(0, 5) || '';
-
-if (!street || !city || !state || !zip5) return null;
-
-const xml =
-`<AddressValidateRequest USERID="${userId}">` +
-`<Revision>1</Revision>` +
-`<Address ID="0">` +
-`<Address1></Address1>` +
-`<Address2>${street}</Address2>` +
-`<City>${city}</City>` +
-`<State>${state}</State>` +
-`<Zip5>${zip5}</Zip5>` +
-`<Zip4></Zip4>` +
-`</Address>` +
-`</AddressValidateRequest>`;
-
-const url =
-'https://secure.shippingapis.com/ShippingAPI.dll?API=Verify&XML=' +
-encodeURIComponent(xml);
-
-const resp = await fetch(url);
-const text = await resp.text();
-
-if (text.includes('<Error>')) {
-console.warn('USPS returned error for address:', rawAddress);
-return null;
-}
-
-function pick(tag) {
-const m = text.match(new RegExp(`<${tag}>([^<]*)</${tag}>`, 'i'));
-return m ? m[1].trim() : '';
-}
-
-const addr2 = pick('Address2');
-const cityResult = pick('City');
-const stateResult = pick('State');
-const zip5Result = pick('Zip5');
-
-if (!addr2 || !cityResult || !stateResult || !zip5Result) return null;
-
-const formatted = `${addr2}, ${cityResult}, ${stateResult} ${zip5Result}`;
-return { formatted };
-} catch (e) {
-console.error('USPS verifyAddressWithUSPS failed:', e);
-return null;
-}
-}
-
-// =============== USPS ADDRESS VALIDATION ENDPOINT ===============
-app.post('/api/usps/validate', async (req, res) => {
-try {
-const { address } = req.body;
-if (!address) {
-return res.status(400).json({ ok: false, error: 'Address is required' });
-}
-
-const result = await verifyAddressWithUSPS(address);
-
-if (!result) {
-return res.status(400).json({ ok: false, error: 'Invalid or unrecognized address' });
-}
-
+// If USPS returns a different address, stop normal flow
+// and send the suggestion to the browser
+if (
+suggested &&
+suggested.toLowerCase() !== addressForUsps.trim().toLowerCase()
+) {
 return res.json({
-ok: true,
-result
-});
-} catch (err) {
-console.error('USPS route error:', err);
-return res.status(500).json({
 ok: false,
-error: 'Server USPS error'
+type: 'address_mismatch',
+suggestedAddress: suggested,
+originalAddress: addressForUsps,
+message:
+'USPS suggested a different address. Please confirm before continuing.'
 });
 }
-});
+}
+} catch (e) {
+console.error('❌ USPS validation for upload form failed:', e);
+// if USPS fails, we just continue the normal flow
+}
 
 /* ----------------------------- CORS (unified) ----------------------------- */
 const ALLOWED_HOSTS = new Set([
