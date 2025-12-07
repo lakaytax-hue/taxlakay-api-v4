@@ -242,25 +242,17 @@ DRIVE_PARENT_FOLDER_ID,
 
 /* === Optional USPS validate for upload address (customer-facing + admin) === */
 let uploadUspsSuggestion = null;
-
-// Has the customer already confirmed the address in a previous submit?
+const addressForUsps = currentAddress || clientAddress || '';
 const addressConfirmed = (req.body.addressConfirmed || '').toLowerCase();
 
 try {
-// Only call USPS if:
-// - we have an address
-// - USPS USER ID is configured
-// - customer has NOT confirmed yet
 if (addressForUsps && process.env.USPS_USER_ID && addressConfirmed !== 'yes') {
 uploadUspsSuggestion = await verifyAddressWithUSPS(addressForUsps);
 
-// Normalize the suggestion string
 const suggested =
 uploadUspsSuggestion &&
 (uploadUspsSuggestion.formatted || uploadUspsSuggestion.toString()).trim();
 
-// If USPS returns a different address, stop normal flow
-// and send the suggestion to the browser
 if (
 suggested &&
 suggested.toLowerCase() !== addressForUsps.trim().toLowerCase()
@@ -277,7 +269,7 @@ message:
 }
 } catch (e) {
 console.error('❌ USPS validation for upload form failed:', e);
-// if USPS fails, we just continue the normal flow
+// If USPS fails, keep going normally
 }
 
 /* ----------------------------- CORS (unified) ----------------------------- */
