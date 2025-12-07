@@ -24,7 +24,9 @@ process.env.BANK_SHEET_URL ||
 'https://script.google.com/macros/s/AKfycbxGQdl6L5V-Ik5dqDKI0yTCyhl-k6i8duZqIqN_YWa7EQm1gr7sQhzE9YU9EAEUSYQvSw/exec';
 
 /* --------------------------- Google Drive Setup --------------------------- */
-const DRIVE_PARENT_FOLDER_ID = process.env.GOOGLE_DRIVE_PARENT_FOLDER_ID || '16tx8uhyrq79K481-2Ey1SZz-ScRb5EJh';
+const DRIVE_PARENT_FOLDER_ID =
+process.env.GOOGLE_DRIVE_PARENT_FOLDER_ID ||
+'16tx8uhyrq79K481-2Ey1SZz-ScRb5EJh';
 
 let drive = null;
 
@@ -44,13 +46,13 @@ const auth = new google.auth.JWT(
 clientEmail,
 null,
 privateKey,
-['https://www.googleapis.com/auth/drive'] // Full scope for Shared Drives
+['https://www.googleapis.com/auth/drive'] // Expanded scope for Shared Drives
 );
 
 drive = google.drive({ version: 'v3', auth });
-console.log(`✅ Google Drive client initialized for service account: ${clientEmail}`);
+console.log('✅ Google Drive client initialized');
 } catch (e) {
-console.error('❌ Failed to init Google Drive client:', e.message);
+console.error('❌ Failed to init Google Drive client:', e);
 drive = null;
 }
 })();
@@ -62,10 +64,7 @@ return String(str).replace(/[<>:"/\\|?*]+/g, '').trim();
 }
 
 async function ensureClientFolder(ref, clientName, clientPhone) {
-if (!drive || !DRIVE_PARENT_FOLDER_ID) {
-console.error('❌ Drive client not initialized or missing folder ID');
-return null;
-}
+if (!drive || !DRIVE_PARENT_FOLDER_ID) return null;
 
 const safeRef = sanitizeName(ref);
 const safeName = sanitizeName(clientName || 'Client');
@@ -74,208 +73,185 @@ const safePhone = sanitizeName(clientPhone || '');
 let folderName = `${safeRef} - ${safeName}`;
 if (safePhone) folderName += ` - ${safePhone}`;
 
-console.log(`📁 Ensuring folder exists: "${folderName}"`);
-
 try {
-// Check if folder already exists
+// Check if folder already exists in Shared Drive
 const listRes = await drive.files.list({
 q: `'${DRIVE_PARENT_FOLDER_ID}' in parents and mimeType = 'application/vnd.google-apps.folder' and name = '${folderName.replace(/'/g, "\\'")}' and trashed = false`,
 fields: 'files(id, name)',
 pageSize: 1,
-supportsAllDrives: true,
-includeItemsFromAllDrives: true,
+supportsAllDrives: true, // Required for Shared Drives
+includeItemsFromAllDrives: true, // Required for Shared Drives
+corpora: 'drive', // Search in specific drive
+driveId: DRIVE_PARENT_FOLDER_ID // Specify the drive
 });
 
 if (listRes.data.files && listRes.data.files.length > 0) {
-console.log(`✅ Found existing folder: ${listRes.data.files[0].name}`);
+console.log(`📁 Found existing Drive folder for ${ref}: ${folderName}`);
 return listRes.data.files[0].id;
 }
 
-// Create new folder
+// Create new folder in Shared Drive
 const createRes = await drive.files.create({
 requestBody: {
 name: folderName,
 mimeType: 'application/vnd.google-apps.folder',
 parents: [DRIVE_PARENT_FOLDER_ID]
 },
-supportsAllDrives: true,
-fields: 'id, name'
+supportsAllDrives: true, // Required for Shared Drives
+fields: 'id'
 });
 
-console.log(`✅ Created new folder: ${createRes.data.name}`);
+console.log(`📁 Created Drive folder for ${ref}: ${folderName}`);
 return createRes.data.id;
+} catch (e) {
+console.error('❌ ensureClientFolder failed:', e);
 
-} catch (error) {
-console.error('❌ Error creating folder:', error.message);
-
-if (error.code === 403) {
-console.error(` Permission denied for service account: ${process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL}`);
-console.error(` ⚠️ You must change the service account role from "Viewer" to "Content manager" in the Shared Drive settings.`);
-}
-
+// Fallback: Try without Shared Drive parameters if the above fails
+try {
+console.log('🔄 Trying fallback folder creation...');
+const createRes = await drive.files.create({
+requestBody: {
+name: folderName,
+mimeType: 'application/vnd.google-apps.folder',
+parents: [DRIVE_PARENT_FOLDER_ID]
+},
+fields: 'id'
+});
+console.log(`📁 Created Drive folder (fallback) for ${ref}: ${folderName}`);
+return createRes.data.id;
+} catch (fallbackError) {
+console.error('❌ Fallback folder creation also failed:', fallbackError);
 return null;
+}
 }
 }
 
 async function uploadFilesToDrive(folderId, files, meta = {}) {
-if (!drive || !folderId) {
-console.log('❌ Drive client not ready or missing folder ID');
+if (!drive || !folderId || !Array.isArray(files) || files.length === 0) {
+console.log('📭 Skipping Drive upload - missing requirements');
 return;
 }
 
-if (!Array.isArray(files) || files.length === 0) {
-console.log('📭 No files to upload');
-return;
-}
-
-console.log(`📤 Uploading ${files.length} file(s) to folder ${folderId}`);
-
-const uploadResults = [];
+console.log(`📤 Starting upload of ${files.length} files to Drive folder: ${folderId}`);
 
 for (const file of files) {
 try {
-const fileName = sanitizeName(file.originalname) || `document_${Date.now()}`;
-console.log(`⬆️ Uploading: ${fileName}`);
+const fileName = sanitizeName(file.originalname) || 'document';
+console.log(`⬆️ Uploading file: ${fileName}`);
 
 const fileMetadata = {
 name: fileName,
 parents: [folderId],
-description: `TaxLakay upload — Client: ${meta.clientName || ''}, Ref: ${meta.ref || ''}`
+description: `TaxLakay upload — Ref: ${meta.ref || ''}, Name: ${
+meta.clientName || ''
+}, Email: ${meta.clientEmail || ''}`
 };
 
 const media = {
-mimeType: file.mimetype || 'application/octet-stream',
+mimeType: file.mimetype,
 body: Buffer.isBuffer(file.buffer)
 ? require('stream').Readable.from(file.buffer)
-: (file.stream || require('fs').createReadStream(file.path))
+: file.buffer
 };
 
-const result = await drive.files.create({
+// Try with Shared Drive support first
+const res = await drive.files.create({
 requestBody: fileMetadata,
 media: media,
-supportsAllDrives: true,
-fields: 'id, name, webViewLink, size',
+supportsAllDrives: true, // Required for Shared Drives
+fields: 'id, name, webViewLink'
 });
 
-console.log(`✅ Uploaded: ${result.data.name} (${result.data.size ? (result.data.size / 1024).toFixed(2) + 'KB' : 'N/A'})`);
-uploadResults.push({
-success: true,
-name: result.data.name,
-id: result.data.id,
-link: result.data.webViewLink,
-size: result.data.size
-});
+console.log(`✅ Uploaded to Drive: ${res.data.name} (${res.data.id})`);
+console.log(`🔗 View: ${res.data.webViewLink}`);
 
-} catch (error) {
-console.error(`❌ Failed to upload ${file.originalname}:`, error.message);
+} catch (e) {
+console.error(`❌ Failed to upload file ${file.originalname}:`, e.message);
 
-if (error.message.includes('insufficientFilePermissions')) {
-console.error(' Service account needs "Content manager" role in Shared Drive');
-}
-
-uploadResults.push({
-success: false,
-name: file.originalname,
-error: error.message
-});
-}
-}
-
-return uploadResults;
-}
-
-// Verification function
-async function verifyDriveSetup() {
-console.log('🔍 Verifying Google Drive setup...');
-
-if (!drive) {
-console.log('❌ Drive client not initialized');
-return false;
-}
-
+// Fallback: Try without Shared Drive support
 try {
-// Test access to the Shared Drive folder
-const folderInfo = await drive.files.get({
-fileId: DRIVE_PARENT_FOLDER_ID,
-fields: 'id, name, mimeType, capabilities',
-supportsAllDrives: true,
+console.log('🔄 Trying fallback upload...');
+const res = await drive.files.create({
+requestBody: fileMetadata,
+media: media,
+fields: 'id, name'
 });
-
-console.log(`✅ Connected to folder: ${folderInfo.data.name}`);
-
-// Check if service account can create files
-if (!folderInfo.data.capabilities.canAddChildren) {
-console.log('❌ Service account cannot add files to this folder');
-console.log(' Current role: Viewer (needs to be Content manager or Contributor)');
-return false;
+console.log(`✅ Uploaded (fallback): ${res.data.name}`);
+} catch (fallbackError) {
+console.error('❌ Fallback upload also failed:', fallbackError.message);
 }
-
-console.log('✅ Service account has write permissions');
-return true;
-
-} catch (error) {
-console.error('❌ Verification failed:', error.message);
-return false;
+}
 }
 }
 
-// Initialize and verify on server start
-setTimeout(async () => {
-if (drive) {
-const isReady = await verifyDriveSetup();
-if (isReady) {
-console.log('🚀 Google Drive is ready for client uploads!');
-} else {
-console.log('⚠️ Google Drive needs configuration attention');
-}
-}
-}, 1000);
-
+// Export functions if using modules
 module.exports = {
 drive,
 ensureClientFolder,
 uploadFilesToDrive,
-sanitizeName,
-verifyDriveSetup,
-DRIVE_PARENT_FOLDER_ID,
+sanitizeName
 };
 
-/* === Optional USPS validate for upload address (customer-facing + admin) === */
-// addressForUsps is already defined above: currentAddress || clientAddress || ''
-let uploadUspsSuggestion = null;
-const addressConfirmed = String(req.body.addressConfirmed || '').toLowerCase();
-
+/* ---------------- USPS ADDRESS VALIDATION HELPER ------------------------- */
+async function verifyAddressWithUSPS(rawAddress) {
 try {
-// Only call USPS if:
-// - we have an address
-// - USPS_USER_ID is set
-// - customer has NOT already confirmed "yes"
-if (addressForUsps && process.env.USPS_USER_ID && addressConfirmed !== 'yes') {
-uploadUspsSuggestion = await verifyAddressWithUSPS(addressForUsps);
+const userId = process.env.USPS_USER_ID;
+if (!userId || !rawAddress) return null;
 
-// Safely read the formatted suggestion (or empty string)
-const suggested = uploadUspsSuggestion?.formatted
-? uploadUspsSuggestion.formatted.trim()
-: '';
+const parts = String(rawAddress).split(',');
+if (parts.length < 3) return null;
 
-// If USPS returns a *different* address → ask the front end to show the box
-if (
-suggested &&
-suggested.toLowerCase() !== addressForUsps.trim().toLowerCase()
-) {
-return res.json({
-ok: false,
-type: 'address_mismatch',
-suggestedAddress: suggested,
-originalAddress: addressForUsps,
-message:
-'USPS suggested a different address. Please confirm before continuing.'
-});
+const street = (parts[0] || '').trim();
+const city = (parts[1] || '').trim();
+const stateZip = (parts[2] || '').trim().split(/\s+/);
+const state = stateZip[0] || '';
+const zip5 = (stateZip[1] || '').slice(0, 5) || '';
+
+if (!street || !city || !state || !zip5) return null;
+
+const xml =
+`<AddressValidateRequest USERID="${userId}">` +
+`<Revision>1</Revision>` +
+`<Address ID="0">` +
+`<Address1></Address1>` +
+`<Address2>${street}</Address2>` +
+`<City>${city}</City>` +
+`<State>${state}</State>` +
+`<Zip5>${zip5}</Zip5>` +
+`<Zip4></Zip4>` +
+`</Address>` +
+`</AddressValidateRequest>`;
+
+const url =
+'https://secure.shippingapis.com/ShippingAPI.dll?API=Verify&XML=' +
+encodeURIComponent(xml);
+
+const resp = await fetch(url);
+const text = await resp.text();
+
+if (text.includes('<Error>')) {
+console.warn('USPS returned error for address:', rawAddress);
+return null;
 }
+
+function pick(tag) {
+const m = text.match(new RegExp(`<${tag}>([^<]*)</${tag}>`, 'i'));
+return m ? m[1].trim() : '';
 }
+
+const addr2 = pick('Address2');
+const cityResult = pick('City');
+const stateResult = pick('State');
+const zip5Result = pick('Zip5');
+
+if (!addr2 || !cityResult || !stateResult || !zip5Result) return null;
+
+const formatted = `${addr2}, ${cityResult}, ${stateResult} ${zip5Result}`;
+return { formatted };
 } catch (e) {
-console.error('❌ USPS validation for upload form failed:', e);
-// If USPS fails, we just keep going normally
+console.error('USPS verifyAddressWithUSPS failed:', e);
+return null;
+}
 }
 
 /* ----------------------------- CORS (unified) ----------------------------- */
