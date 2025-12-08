@@ -1,57 +1,44 @@
-require("dotenv").config();
-const { google } = require("googleapis");
-const readline = require("readline");
+const { google } = require('googleapis');
+const readline = require('readline');
 
-// Load env variables
-const CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
-const CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
-const REDIRECT_URI = process.env.GOOGLE_REDIRECT_URI;
+GOOGLE_OAUTH_CLIENT_ID="987557178118-q0obi1ls9oi9mceql26uqh962v8htcvg.apps.googleusercontent.com";
+GOOGLE_OAUTH_CLIENT_SECRET="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";
+GOOGLE_OAUTH_REDIRECT_URI="http://localhost:3000/oauth2callback";
 
-// Google OAuth2 client
-const oauth2Client = new google.auth.OAuth2(
-CLIENT_ID,
-CLIENT_SECRET,
-REDIRECT_URI
-);
-
-// Step 1: generate URL
 function startAuth() {
-const url = oauth2Client.generateAuthUrl({
-access_type: "offline",
-scope: ["https://www.googleapis.com/auth/drive.file"],
-prompt: "consent",
+const authUrl = oauth2Client.generateAuthUrl({
+access_type: 'offline',
+prompt: 'consent',
+scope: ['https://www.googleapis.com/auth/drive.file']
 });
 
-console.log("\nSTEP 1: Open this URL in your browser:\n");
-console.log(url);
-console.log("\n-----------------------------------------\n");
-console.log("STEP 2: Sign in, click Allow, then copy the FULL URL");
-console.log("-----------------------------------------\n");
+console.log("\nSTEP 1: Open this URL in Chrome:\n");
+console.log(authUrl);
+console.log("\nSTEP 2: Log in with lakaytax@gmail.com\n");
 
 askForCode();
 }
 
-// Step 2: wait for pasted URL
 function askForCode() {
 const rl = readline.createInterface({
 input: process.stdin,
 output: process.stdout,
 });
 
-rl.question("STEP 3: Paste the FULL URL here:\n", async (answer) => {
+rl.question("STEP 3: Paste the code here:\n", async (code) => {
 rl.close();
 
 try {
-const code = new URL(answer).searchParams.get("code");
 const { tokens } = await oauth2Client.getToken(code);
-
 console.log("\n✅ REFRESH TOKEN:");
 console.log(tokens.refresh_token);
 
-console.log("\n⚠️ Save this refresh token into your Render env variable:");
-console.log("GOOGLE_REFRESH_TOKEN = " + tokens.refresh_token);
+console.log("\n⚠️ Save this in your Render ENV:");
+console.log("GOOGLE_REFRESH_TOKEN=" + tokens.refresh_token);
+
 } catch (err) {
-console.error("\n❌ ERROR retrieving token:", err.message);
+console.error("\n❌ ERROR retrieving refresh token:");
+console.error(err.message);
 }
 });
 }
