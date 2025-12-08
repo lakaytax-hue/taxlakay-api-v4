@@ -31,34 +31,47 @@ const BANK_SHEET_URL =
 process.env.BANK_SHEET_URL ||
 'https://script.google.com/macros/s/AKfycbxGQdl6L5V-Ik5dqDKI0yTCyhl-k6i8duZqIqN_YWa7EQm1gr7sQhzE9YU9EAEUSYQvSw/exec';
 
-/* --------------------------- Google Drive Setup --------------------------- */
+/* --------------------------- Google Drive Setup (OAuth) --------------------------- */
+
 const DRIVE_PARENT_FOLDER_ID =
-process.env.GOOGLE_DRIVE_PARENT_FOLDER_ID ||
-'16tx8uhyrq79K481-2Ey1SZz-ScRb5EJh';
+process.env.GOOGLE_DRIVE_PARENT_FOLDER_ID || '16tx8uhyrq79K481-2Ey1SZz-ScRb5EJh';
+
+// OAuth2 env vars (all of these must exist in Render)
+const GOOGLE_OAUTH_CLIENT_ID = process.env.GOOGLE_OAUTH_CLIENT_ID || '';
+const GOOGLE_OAUTH_CLIENT_SECRET = process.env.GOOGLE_OAUTH_CLIENT_SECRET || '';
+const GOOGLE_OAUTH_REDIRECT_URI =
+process.env.GOOGLE_OAUTH_REDIRECT_URI || 'http://localhost:3000/oauth2callback';
+const GOOGLE_REFRESH_TOKEN = process.env.GOOGLE_REFRESH_TOKEN || '';
 
 let drive = null;
 
 (function initDrive() {
 try {
-const clientEmail = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
-const rawKey = process.env.GOOGLE_PRIVATE_KEY || '';
-
-if (!clientEmail || !rawKey || !DRIVE_PARENT_FOLDER_ID) {
-console.warn('⚠️ Google Drive not fully configured. Skipping Drive uploads.');
+if (
+!GOOGLE_OAUTH_CLIENT_ID ||
+!GOOGLE_OAUTH_CLIENT_SECRET ||
+!GOOGLE_REFRESH_TOKEN ||
+!DRIVE_PARENT_FOLDER_ID
+) {
+console.warn('⚠️ Google Drive OAuth not fully configured. Skipping Drive uploads.');
 return;
 }
 
-const privateKey = rawKey.replace(/\\n/g, '\n');
-
-const auth = new google.auth.JWT(
-clientEmail,
-null,
-privateKey,
-['https://www.googleapis.com/auth/drive'] // Expanded scope for Shared Drives
+// OAuth2 client for lakaytax@gmail.com (NOT service account)
+const oauth2Client = new google.auth.OAuth2(
+GOOGLE_OAUTH_CLIENT_ID,
+GOOGLE_OAUTH_CLIENT_SECRET,
+GOOGLE_OAUTH_REDIRECT_URI
 );
 
-drive = google.drive({ version: 'v3', auth });
-console.log('✅ Google Drive client initialized');
+// Use the refresh token you generated with get-refresh-token.js
+oauth2Client.setCredentials({
+refresh_token: GOOGLE_REFRESH_TOKEN.trim(),
+});
+
+drive = google.drive({ version: 'v3', auth: oauth2Client });
+console.log('✅ Google Drive OAuth client initialized (lakaytax@gmail.com)');
+console.log('📁 Parent folder for client uploads:', DRIVE_PARENT_FOLDER_ID);
 } catch (e) {
 console.error('❌ Failed to init Google Drive client:', e);
 drive = null;
@@ -82,15 +95,14 @@ let folderName = `${safeRef} - ${safeName}`;
 if (safePhone) folderName += ` - ${safePhone}`;
 
 try {
-// Check if folder already exists in Shared Drive
+// Check if folder already exists in *My Drive* parent folder
 const listRes = await drive.files.list({
-q: `'${DRIVE_PARENT_FOLDER_ID}' in parents and mimeType = 'application/vnd.google-apps.folder' and name = '${folderName.replace(/'/g, "\\'")}' and trashed = false`,
+q: `'${DRIVE_PARENT_FOLDER_ID}' in parents and mimeType = 'application/vnd.google-apps.folder' and name = '${folderName.replace(
+/'/g,
+"\\'"
+)}' and trashed = false`,
 fields: 'files(id, name)',
 pageSize: 1,
-supportsAllDrives: true, // Required for Shared Drives
-includeItemsFromAllDrives: true, // Required for Shared Drives
-corpora: 'drive', // Search in specific drive
-driveId: DRIVE_PARENT_FOLDER_ID // Specify the drive
 });
 
 if (listRes.data.files && listRes.data.files.length > 0) {
@@ -98,39 +110,21 @@ console.log(`📁 Found existing Drive folder for ${ref}: ${folderName}`);
 return listRes.data.files[0].id;
 }
 
-// Create new folder in Shared Drive
+// Create new folder in the parent folder (My Drive)
 const createRes = await drive.files.create({
 requestBody: {
 name: folderName,
 mimeType: 'application/vnd.google-apps.folder',
-parents: [DRIVE_PARENT_FOLDER_ID]
+parents: [DRIVE_PARENT_FOLDER_ID],
 },
-supportsAllDrives: true, // Required for Shared Drives
-fields: 'id'
+fields: 'id',
 });
 
 console.log(`📁 Created Drive folder for ${ref}: ${folderName}`);
 return createRes.data.id;
 } catch (e) {
-console.error('❌ ensureClientFolder failed:', e);
-
-// Fallback: Try without Shared Drive parameters if the above fails
-try {
-console.log('🔄 Trying fallback folder creation...');
-const createRes = await drive.files.create({
-requestBody: {
-name: folderName,
-mimeType: 'application/vnd.google-apps.folder',
-parents: [DRIVE_PARENT_FOLDER_ID]
-},
-fields: 'id'
-});
-console.log(`📁 Created Drive folder (fallback) for ${ref}: ${folderName}`);
-return createRes.data.id;
-} catch (fallbackError) {
-console.error('❌ Fallback folder creation also failed:', fallbackError);
+console.error('❌ ensureClientFolder failed:', e.message);
 return null;
-}
 }
 }
 
@@ -152,52 +146,36 @@ name: fileName,
 parents: [folderId],
 description: `TaxLakay upload — Ref: ${meta.ref || ''}, Name: ${
 meta.clientName || ''
-}, Email: ${meta.clientEmail || ''}`
+}, Email: ${meta.clientEmail || ''}`,
 };
 
 const media = {
 mimeType: file.mimetype,
 body: Buffer.isBuffer(file.buffer)
 ? require('stream').Readable.from(file.buffer)
-: file.buffer
+: file.buffer,
 };
 
-// Try with Shared Drive support first
 const res = await drive.files.create({
 requestBody: fileMetadata,
-media: media,
-supportsAllDrives: true, // Required for Shared Drives
-fields: 'id, name, webViewLink'
+media,
+fields: 'id, name, webViewLink',
 });
 
 console.log(`✅ Uploaded to Drive: ${res.data.name} (${res.data.id})`);
 console.log(`🔗 View: ${res.data.webViewLink}`);
-
 } catch (e) {
 console.error(`❌ Failed to upload file ${file.originalname}:`, e.message);
-
-// Fallback: Try without Shared Drive support
-try {
-console.log('🔄 Trying fallback upload...');
-const res = await drive.files.create({
-requestBody: fileMetadata,
-media: media,
-fields: 'id, name'
-});
-console.log(`✅ Uploaded (fallback): ${res.data.name}`);
-} catch (fallbackError) {
-console.error('❌ Fallback upload also failed:', fallbackError.message);
-}
 }
 }
 }
 
-// Export functions if using modules
+// Export functions if this is in its own module file
 module.exports = {
 drive,
 ensureClientFolder,
 uploadFilesToDrive,
-sanitizeName
+sanitizeName,
 };
 
 /* ---------------- USPS ADDRESS VALIDATION HELPER ------------------------- */
