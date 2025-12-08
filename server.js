@@ -11,9 +11,11 @@ const app = express();
 
 /* --------------------------- GOOGLE OAUTH SETUP --------------------------- */
 
-const CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
-const CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
-const REDIRECT_URI = process.env.GOOGLE_REDIRECT_URI;
+const oauth2Client = new google.auth.OAuth2(
+process.env.GOOGLE_OAUTH_CLIENT_ID,
+process.env.GOOGLE_OAUTH_CLIENT_SECRET,
+process.env.GOOGLE_OAUTH_REDIRECT_URI
+);
 
 /* --------------------------- GOOGLE APPS SCRIPTS -------------------------- */
 /** MAIN UPLOAD LOG (Tax Lakay - Upload Log) */
