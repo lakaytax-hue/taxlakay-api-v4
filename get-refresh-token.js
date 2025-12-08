@@ -1,9 +1,9 @@
 const { google } = require('googleapis');
 const readline = require('readline');
 
-GOOGLE_OAUTH_CLIENT_ID="987557178118-q0obi1ls9oi9mceql26uqh962v8htcvg.apps.googleusercontent.com";
-GOOGLE_OAUTH_CLIENT_SECRET="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";
-GOOGLE_OAUTH_REDIRECT_URI="http://localhost:3000/oauth2callback";
+GOOGLE_OAUTH_CLIENT_ID='987557178118-q0obi1ls9oi9mceql26uqh962v8htcvg.apps.googleusercontent.com';
+GOOGLE_OAUTH_CLIENT_SECRET='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';
+GOOGLE_OAUTH_REDIRECT_URI='http://localhost:3000/oauth2callback';
 
 function startAuth() {
 const authUrl = oauth2Client.generateAuthUrl({
