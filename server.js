@@ -234,11 +234,39 @@ if (!addr2 || !cityResult || !stateResult || !zip5Result) return null;
 
 const formatted = `${addr2}, ${cityResult}, ${stateResult} ${zip5Result}`;
 return { formatted };
+
 } catch (e) {
 console.error('USPS verifyAddressWithUSPS failed:', e);
 return null;
 }
 }
+
+/* ---------------- USPS ADDRESS VALIDATION ROUTE ------------------------- */
+// JSON body is expected: { "address": "123 Main St, Lakeland, FL 33810" }
+app.post('/api/usps-verify', express.json(), async (req, res) => {
+try {
+const address = (req.body && req.body.address) || '';
+if (!address.trim()) {
+return res.status(400).json({ ok: false, message: 'Missing address' });
+}
+
+const result = await verifyAddressWithUSPS(address);
+
+// If USPS fails or returns nothing, just tell the front-end "no suggestion"
+if (!result || !result.formatted) {
+return res.json({ ok: false });
+}
+
+return res.json({
+ok: true,
+formatted: result.formatted
+});
+
+} catch (err) {
+console.error('USPS /api/usps-verify failed:', err);
+return res.status(500).json({ ok: false });
+}
+});
 
 /* ----------------------------- CORS (unified) ----------------------------- */
 const ALLOWED_HOSTS = new Set([
