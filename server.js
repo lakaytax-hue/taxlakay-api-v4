@@ -178,8 +178,6 @@ uploadFilesToDrive,
 sanitizeName,
 };
 
-// USPS ADDRESS VALIDATION SETUP
-require('dotenv').config(); // Make sure to install: npm install dotenv
 
 /* ---------------- USPS ADDRESS VALIDATION HELPER ------------------------- */
 async function verifyAddressWithUSPS(rawAddress) {
