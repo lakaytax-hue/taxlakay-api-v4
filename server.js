@@ -179,146 +179,152 @@ sanitizeName,
 };
 
 /* ---------------- USPS ADDRESS VALIDATION HELPER ------------------------- */
+/**
+* Expects a single-line address:
+* "123 Main St, Lakeland, FL 33801"
+*/
 async function verifyAddressWithUSPS(rawAddress) {
 try {
 const userId = process.env.USPS_USER_ID;
-if (!userId || !rawAddress) return null;
+if (!userId || !rawAddress) {
+console.warn('USPS not configured or no address provided.');
+return null;
+}
 
 const parts = String(rawAddress).split(',');
-if (parts.length < 3) return null;
+if (parts.length < 3) {
+console.warn('USPS: address not in expected "street, city, state zip" format.');
+return null;
+}
 
 const street = (parts[0] || '').trim();
 const city = (parts[1] || '').trim();
-const stateZip = (parts[2] || '').trim().split(/\s+/);
-const state = stateZip[0] || '';
-const zip5 = (stateZip[1] || '').slice(0, 5) || '';
 
-if (!street || !city || !state || !zip5) return null;
+const stateZipParts = (parts[2] || '').trim().split(/\s+/);
+const state = stateZipParts[0] || '';
+const zip5 = stateZipParts[1] || '';
 
-const xml =
-`<AddressValidateRequest USERID="${userId}">` +
-`<Revision>1</Revision>` +
-`<Address ID="0">` +
-`<Address1></Address1>` +
-`<Address2>${street}</Address2>` +
-`<City>${city}</City>` +
-`<State>${state}</State>` +
-`<Zip5>${zip5}</Zip5>` +
-`<Zip4></Zip4>` +
-`</Address>` +
-`</AddressValidateRequest>`;
+if (!street || !city || !state || !zip5) {
+console.warn('USPS: missing one of street/city/state/zip.');
+return null;
+}
 
-const url =
-'https://secure.shippingapis.com/ShippingAPI.dll?API=Verify&XML=' +
-encodeURIComponent(xml);
+const xmlPayload = `
+<AddressValidateRequest USERID="${userId}">
+<Revision>1</Revision>
+<Address ID="0">
+<Address1></Address1>
+<Address2>${street}</Address2>
+<City>${city}</City>
+<State>${state}</State>
+<Zip5>${zip5}</Zip5>
+<Zip4></Zip4>
+</Address>
+</AddressValidateRequest>
+`.replace(/\s+/g, ' ').trim();
+
+const url = `https://secure.shippingapis.com/ShippingAPI.dll?API=Verify&XML=${encodeURIComponent(xmlPayload)}`;
 
 const resp = await fetch(url);
+if (!resp.ok) {
+console.error('USPS HTTP error:', resp.status, await resp.text());
+return null;
+}
+
 const text = await resp.text();
 
+// Quick error check
 if (text.includes('<Error>')) {
-console.warn('USPS returned error for address:', rawAddress);
+console.warn('USPS returned an error:', text);
 return null;
 }
 
-function pick(tag) {
+// Very simple XML "parsing" with regex (good enough for our fields)
+const getTag = (tag) => {
 const m = text.match(new RegExp(`<${tag}>([^<]*)</${tag}>`, 'i'));
 return m ? m[1].trim() : '';
+};
+
+const outAddress2 = getTag('Address2'); // street
+const outCity = getTag('City');
+const outState = getTag('State');
+const outZip5 = getTag('Zip5');
+const outZip4 = getTag('Zip4');
+
+if (!outAddress2 || !outCity || !outState || !outZip5) {
+console.warn('USPS: incomplete response:', text);
+return null;
 }
 
-const addr2 = pick('Address2');
-const cityResult = pick('City');
-const stateResult = pick('State');
-const zip5Result = pick('Zip5');
+const suggested = {
+street: outAddress2,
+city: outCity,
+state: outState,
+zip5: outZip5,
+zip4: outZip4,
+};
 
-if (!addr2 || !cityResult || !stateResult || !zip5Result) return null;
+const original = {
+street,
+city,
+state,
+zip5,
+zip4: '',
+};
 
-const formatted = `${addr2}, ${cityResult}, ${stateResult} ${zip5Result}`;
-return { formatted };
+const normalizedOriginal = `${original.street}, ${original.city}, ${original.state} ${original.zip5}`;
+const normalizedSuggested = `${suggested.street}, ${suggested.city}, ${suggested.state} ${suggested.zip5}`;
 
-} catch (e) {
-console.error('USPS verifyAddressWithUSPS failed:', e);
+const same = normalizedOriginal.toUpperCase() === normalizedSuggested.toUpperCase();
+
+return {
+same,
+original: {
+...original,
+normalized: normalizedOriginal,
+},
+suggested: {
+...suggested,
+normalized: normalizedSuggested,
+},
+};
+} catch (err) {
+console.error('USPS validation failed:', err);
 return null;
 }
 }
 
-/* ---------------- USPS ADDRESS VALIDATION ROUTE ------------------------- */
-// JSON body is expected: { "address": "123 Main St, Lakeland, FL 33810" }
-app.post('/api/usps-verify', express.json(), async (req, res) => {
+/* ---------------- USPS ADDRESS VALIDATION ENDPOINT ----------------------- */
+/**
+* Body: { address: "123 Main St, Lakeland, FL 33801" }
+* Returns: { ok, same, original, suggested, error? }
+*/
+app.post('/api/verify-address', async (req, res) => {
 try {
-const address = (req.body && req.body.address) || '';
-if (!address.trim()) {
-return res.status(400).json({ ok: false, message: 'Missing address' });
+const { address } = req.body || {};
+if (!address) {
+return res.status(400).json({ ok: false, error: 'Missing address' });
 }
 
 const result = await verifyAddressWithUSPS(address);
 
-// If USPS fails or returns nothing, just tell the front-end "no suggestion"
-if (!result || !result.formatted) {
-return res.json({ ok: false });
-}
-
-return res.json({
-ok: true,
-formatted: result.formatted
-});
-
-} catch (err) {
-console.error('USPS /api/usps-verify failed:', err);
-return res.status(500).json({ ok: false });
-}
-});
-/* ---------------- USPS ADDRESS VALIDATION ROUTE ------------------------- */
-// JSON body is expected: { "address": "123 Main St, Lakeland, FL 33810" }
-app.post('/api/usps-verify', express.json(), async (req, res) => {
-try {
-const address = (req.body && req.body.address) || '';
-const trimmed = address.trim();
-
-if (!trimmed) {
-return res.status(400).json({ ok: false, message: 'Missing address' });
-}
-
-const result = await verifyAddressWithUSPS(trimmed);
-
-// If USPS fails or returns nothing, just tell the front-end "no suggestion"
-if (!result || !result.formatted) {
+if (!result) {
+// If USPS failed, we let the frontend just submit the form normally
 return res.json({
 ok: false,
-message: 'No USPS suggestion available for this address'
+error: 'USPS validation not available',
 });
 }
 
-// If the formatted address is exactly the same as what they typed (ignoring case/spaces),
-// return ok:true but note that it's already normalized.
-const normalize = (str) =>
-(str || '')
-.toLowerCase()
-.replace(/\s+/g, ' ')
-.replace(/,/g, '')
-.trim();
-
-const fromUser = normalize(trimmed);
-const fromUSPS = normalize(result.formatted);
-
-if (fromUser === fromUSPS) {
 return res.json({
 ok: true,
-formatted: result.formatted,
-same: true,
-message: 'Address is already in USPS format'
-});
-}
-
-// USPS has a *different* suggestion
-return res.json({
-ok: true,
-same: false,
-formatted: result.formatted,
-message: 'USPS suggested a more standardized version of this address'
+same: result.same,
+original: result.original,
+suggested: result.suggested,
 });
 } catch (err) {
-console.error('USPS /api/usps-verify failed:', err);
-return res.status(500).json({ ok: false, message: 'USPS verification failed' });
+console.error('Error in /api/verify-address:', err);
+res.status(500).json({ ok: false, error: 'Server error' });
 }
 });
 
