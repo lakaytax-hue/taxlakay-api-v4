@@ -179,53 +179,21 @@ sanitizeName,
 };
 
 /* ---------------- USPS ADDRESS VALIDATION HELPER ------------------------- */
-/**
-* Expects something like:
-* "123 Main St, Lakeland, FL 33810"
-* Returns: { formatted: "123 MAIN ST, LAKELAND, FL 33810" } or null
-*/
 async function verifyAddressWithUSPS(rawAddress) {
 try {
 const userId = process.env.USPS_USER_ID;
-if (!userId) {
-console.warn('USPS_USER_ID env var is missing.');
-return null;
-}
+if (!userId || !rawAddress) return null;
 
-if (!rawAddress) return null;
-const addr = String(rawAddress).trim();
+const parts = String(rawAddress).split(',');
+if (parts.length < 3) return null;
 
-// Try to parse "Street, City, ST 12345"
-let street = '';
-let city = '';
-let state = '';
-let zip5 = '';
-
-const fullMatch = addr.match(/^(.+?),\s*([^,]+),\s*([A-Za-z]{2})\s+(\d{5})(?:-\d{4})?$/);
-if (fullMatch) {
-street = fullMatch[1].trim();
-city = fullMatch[2].trim();
-state = fullMatch[3].trim().toUpperCase();
-zip5 = fullMatch[4].trim().slice(0, 5);
-} else {
-// Fallback to simple comma split: "Street, City, ST 12345"
-const parts = addr.split(',');
-if (parts.length < 3) {
-console.warn('USPS: address not in expected format (need "street, city, ST 12345"):', addr);
-return null;
-}
-
-street = (parts[0] || '').trim();
-city = (parts[1] || '').trim();
+const street = (parts[0] || '').trim();
+const city = (parts[1] || '').trim();
 const stateZip = (parts[2] || '').trim().split(/\s+/);
-state = (stateZip[0] || '').trim().toUpperCase();
-zip5 = (stateZip[1] || '').trim().slice(0, 5);
-}
+const state = stateZip[0] || '';
+const zip5 = (stateZip[1] || '').slice(0, 5) || '';
 
-if (!street || !city || !state || !zip5) {
-console.warn('USPS: missing street/city/state/zip after parsing:', addr);
-return null;
-}
+if (!street || !city || !state || !zip5) return null;
 
 const xml =
 `<AddressValidateRequest USERID="${userId}">` +
@@ -247,13 +215,8 @@ encodeURIComponent(xml);
 const resp = await fetch(url);
 const text = await resp.text();
 
-if (!resp.ok) {
-console.error('USPS HTTP error:', resp.status, text);
-return null;
-}
-
 if (text.includes('<Error>')) {
-console.warn('USPS returned error for address:', addr);
+console.warn('USPS returned error for address:', rawAddress);
 return null;
 }
 
@@ -267,19 +230,43 @@ const cityResult = pick('City');
 const stateResult = pick('State');
 const zip5Result = pick('Zip5');
 
-if (!addr2 || !cityResult || !stateResult || !zip5Result) {
-console.warn('USPS: missing fields in response');
-return null;
-}
+if (!addr2 || !cityResult || !stateResult || !zip5Result) return null;
 
 const formatted = `${addr2}, ${cityResult}, ${stateResult} ${zip5Result}`;
 return { formatted };
+
 } catch (e) {
 console.error('USPS verifyAddressWithUSPS failed:', e);
 return null;
 }
 }
 
+/* ---------------- USPS ADDRESS VALIDATION ROUTE ------------------------- */
+// JSON body is expected: { "address": "123 Main St, Lakeland, FL 33810" }
+app.post('/api/usps-verify', express.json(), async (req, res) => {
+try {
+const address = (req.body && req.body.address) || '';
+if (!address.trim()) {
+return res.status(400).json({ ok: false, message: 'Missing address' });
+}
+
+const result = await verifyAddressWithUSPS(address);
+
+// If USPS fails or returns nothing, just tell the front-end "no suggestion"
+if (!result || !result.formatted) {
+return res.json({ ok: false });
+}
+
+return res.json({
+ok: true,
+formatted: result.formatted
+});
+
+} catch (err) {
+console.error('USPS /api/usps-verify failed:', err);
+return res.status(500).json({ ok: false });
+}
+});
 /* ---------------- USPS ADDRESS VALIDATION ROUTE ------------------------- */
 // JSON body is expected: { "address": "123 Main St, Lakeland, FL 33810" }
 app.post('/api/usps-verify', express.json(), async (req, res) => {
