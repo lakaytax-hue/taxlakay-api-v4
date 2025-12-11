@@ -178,12 +178,21 @@ uploadFilesToDrive,
 sanitizeName,
 };
 
+// USPS ADDRESS VALIDATION SETUP
+require('dotenv').config(); // Make sure to install: npm install dotenv
+
 /* ---------------- USPS ADDRESS VALIDATION HELPER ------------------------- */
 async function verifyAddressWithUSPS(rawAddress) {
 try {
 const userId = process.env.USPS_USER_ID;
-if (!userId || !rawAddress) return null;
+if (!userId) {
+console.error('USPS_USER_ID not configured in environment variables');
+return null;
+}
 
+if (!rawAddress || typeof rawAddress !== 'string') return null;
+
+// Parse the address string
 const parts = String(rawAddress).split(',');
 if (parts.length < 3) return null;
 
@@ -195,6 +204,7 @@ const zip5 = (stateZip[1] || '').slice(0, 5) || '';
 
 if (!street || !city || !state || !zip5) return null;
 
+// Build USPS XML request
 const xml =
 `<AddressValidateRequest USERID="${userId}">` +
 `<Revision>1</Revision>` +
@@ -216,24 +226,40 @@ const resp = await fetch(url);
 const text = await resp.text();
 
 if (text.includes('<Error>')) {
-console.warn('USPS returned error for address:', rawAddress);
+const errorMatch = text.match(/<Description>([^<]+)<\/Description>/i);
+const errorMsg = errorMatch ? errorMatch[1] : 'Unknown USPS error';
+console.warn('USPS returned error:', errorMsg, 'for address:', rawAddress);
 return null;
 }
 
-function pick(tag) {
-const m = text.match(new RegExp(`<${tag}>([^<]*)</${tag}>`, 'i'));
-return m ? m[1].trim() : '';
+// Extract values from USPS response
+function extractTag(tag) {
+const regex = new RegExp(`<${tag}>([^<]*)</${tag}>`, 'i');
+const match = text.match(regex);
+return match ? match[1].trim() : '';
 }
 
-const addr2 = pick('Address2');
-const cityResult = pick('City');
-const stateResult = pick('State');
-const zip5Result = pick('Zip5');
+const addr2 = extractTag('Address2');
+const cityResult = extractTag('City');
+const stateResult = extractTag('State');
+const zip5Result = extractTag('Zip5');
+const zip4Result = extractTag('Zip4');
 
 if (!addr2 || !cityResult || !stateResult || !zip5Result) return null;
 
-const formatted = `${addr2}, ${cityResult}, ${stateResult} ${zip5Result}`;
-return { formatted };
+// Format the address nicely
+const fullZip = zip4Result ? `${zip5Result}-${zip4Result}` : zip5Result;
+const formatted = `${addr2}, ${cityResult}, ${stateResult} ${fullZip}`;
+
+return {
+formatted,
+street: addr2,
+city: cityResult,
+state: stateResult,
+zip5: zip5Result,
+zip4: zip4Result,
+fullZip: fullZip
+};
 
 } catch (e) {
 console.error('USPS verifyAddressWithUSPS failed:', e);
@@ -242,29 +268,82 @@ return null;
 }
 
 /* ---------------- USPS ADDRESS VALIDATION ROUTE ------------------------- */
+// Add this to your Express app (assuming you have app = express())
 // JSON body is expected: { "address": "123 Main St, Lakeland, FL 33810" }
 app.post('/api/usps-verify', express.json(), async (req, res) => {
 try {
+// CORS headers (adjust as needed)
+res.header('Access-Control-Allow-Origin', '*');
+res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
+
 const address = (req.body && req.body.address) || '';
 if (!address.trim()) {
-return res.status(400).json({ ok: false, message: 'Missing address' });
+return res.status(400).json({
+ok: false,
+message: 'Missing address'
+});
 }
 
 const result = await verifyAddressWithUSPS(address);
 
-// If USPS fails or returns nothing, just tell the front-end "no suggestion"
+// If USPS fails or returns nothing
 if (!result || !result.formatted) {
-return res.json({ ok: false });
+return res.json({
+ok: false,
+message: 'Could not validate address with USPS'
+});
 }
 
 return res.json({
 ok: true,
-formatted: result.formatted
+formatted: result.formatted,
+components: {
+street: result.street,
+city: result.city,
+state: result.state,
+zip: result.fullZip
+}
 });
 
 } catch (err) {
 console.error('USPS /api/usps-verify failed:', err);
-return res.status(500).json({ ok: false });
+return res.status(500).json({
+ok: false,
+message: 'Server error validating address'
+});
+}
+});
+
+// Add this route for testing USPS connection
+app.get('/api/usps-test', async (req, res) => {
+try {
+const testAddress = "1600 Pennsylvania Ave NW, Washington, DC 20500";
+const result = await verifyAddressWithUSPS(testAddress);
+
+if (result) {
+return res.json({
+success: true,
+testAddress: testAddress,
+validated: result.formatted,
+environment: {
+uspsUserId: process.env.USPS_USER_ID ? 'Set (hidden)' : 'Not set',
+nodeEnv: process.env.NODE_ENV || 'development'
+}
+});
+} else {
+return res.json({
+success: false,
+message: 'USPS test failed',
+environment: {
+uspsUserId: process.env.USPS_USER_ID ? 'Set (hidden)' : 'Not set'
+}
+});
+}
+} catch (error) {
+return res.status(500).json({
+success: false,
+error: error.message
+});
 }
 });
 
