@@ -178,91 +178,84 @@ uploadFilesToDrive,
 sanitizeName,
 };
 
-/* ---------------- USPS ADDRESS VALIDATION HELPER ------------------------- */
-/**
-* Expects a single-line address:
-* "123 Main St, Lakeland, FL 33801"
-*/
+/* ================= USPS ADDRESS NORMALIZATION + VALIDATION ================= */
+
+function normalizeRawAddress(raw) {
+if (!raw) return '';
+
+return String(raw)
+.replace(/\n+/g, ' ')
+.replace(/\s{2,}/g, ' ')
+.replace(/,/g, ' ')
+.trim();
+}
+
+function extractStateZip(address) {
+const states =
+'AL|AK|AZ|AR|CA|CO|CT|DE|FL|GA|HI|ID|IL|IN|IA|KS|KY|LA|ME|MD|MA|MI|MN|MS|MO|MT|NE|NV|NH|NJ|NM|NY|NC|ND|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VT|VA|WA|WV|WI|WY|DC';
+
+const zipMatch = address.match(/\b\d{5}(-\d{4})?\b/);
+const stateMatch = address.match(new RegExp(`\\b(${states})\\b`, 'i'));
+
+return {
+zip5: zipMatch ? zipMatch[0].slice(0, 5) : '',
+state: stateMatch ? stateMatch[1].toUpperCase() : ''
+};
+}
+
 async function verifyAddressWithUSPS(rawAddress) {
 try {
 const userId = process.env.USPS_USER_ID;
-if (!userId || !rawAddress) {
-console.warn('USPS not configured or no address provided.');
+if (!userId || !rawAddress) return null;
+
+const normalized = normalizeRawAddress(rawAddress);
+const { zip5, state } = extractStateZip(normalized);
+
+// USPS still works without ZIP but better with it
+const xml = `
+<AddressValidateRequest USERID="${userId}">
+<Revision>1</Revision>
+<Address ID="0">
+<Address1></Address1>
+<Address2>${normalized}</Address2>
+<City></City>
+<State>${state}</State>
+<Zip5>${zip5}</Zip5>
+<Zip4></Zip4>
+</Address>
+</AddressValidateRequest>`.trim();
+
+const url =
+'https://secure.shippingapis.com/ShippingAPI.dll?API=Verify&XML=' +
+encodeURIComponent(xml);
+
+const resp = await fetch(url);
+const text = await resp.text();
+
+if (text.includes('<Error>')) {
+console.warn('USPS error response');
 return null;
 }
 
-// ---------------- SMART ADDRESS PARSER (ACCEPTS ANY FORMAT) ----------------
-function smartParseAddress(raw) {
-if (!raw) return null;
-
-let text = raw.trim().replace(/\s+/g, ' ');
-const zipMatch = text.match(/(\d{5})(?:-\d{4})?$/);
-
-if (!zipMatch) return null;
-const zip = zipMatch[1];
-text = text.replace(zipMatch[0], '').trim();
-
-// List of states for matching
-const states = {
-'ALABAMA':'AL','ALASKA':'AK','ARIZONA':'AZ','ARKANSAS':'AR','CALIFORNIA':'CA',
-'COLORADO':'CO','CONNECTICUT':'CT','DELAWARE':'DE','FLORIDA':'FL','GEORGIA':'GA',
-'HAWAII':'HI','IDAHO':'ID','ILLINOIS':'IL','INDIANA':'IN','IOWA':'IA','KANSAS':'KS',
-'KENTUCKY':'KY','LOUISIANA':'LA','MAINE':'ME','MARYLAND':'MD','MASSACHUSETTS':'MA',
-'MICHIGAN':'MI','MINNESOTA':'MN','MISSISSIPPI':'MS','MISSOURI':'MO','MONTANA':'MT',
-'NEBRASKA':'NE','NEVADA':'NV','NEW HAMPSHIRE':'NH','NEW JERSEY':'NJ','NEW MEXICO':'NM',
-'NEW YORK':'NY','NORTH CAROLINA':'NC','NORTH DAKOTA':'ND','OHIO':'OH','OKLAHOMA':'OK',
-'OREGON':'OR','PENNSYLVANIA':'PA','RHODE ISLAND':'RI','SOUTH CAROLINA':'SC',
-'SOUTH DAKOTA':'SD','TENNESSEE':'TN','TEXAS':'TX','UTAH':'UT','VERMONT':'VT',
-'VIRGINIA':'VA','WASHINGTON':'WA','WEST VIRGINIA':'WV','WISCONSIN':'WI','WYOMING':'WY'
+const pick = tag => {
+const m = text.match(new RegExp(`<${tag}>([^<]*)</${tag}>`, 'i'));
+return m ? m[1].trim() : '';
 };
 
-let stateCode = null;
-let city = null;
-let street = null;
+const street = pick('Address2');
+const city = pick('City');
+const st = pick('State');
+const zip = pick('Zip5');
 
-const words = text.split(/[, ]+/);
-
-// Try last words for state
-for (let i = words.length - 1; i >= 0; i--) {
-const w = words[i].toUpperCase();
-
-if (states[w]) {
-stateCode = states[w];
-words.splice(i, 1);
-break;
-}
-
-if (w.length === 2 && Object.values(states).includes(w)) {
-stateCode = w;
-words.splice(i, 1);
-break;
-}
-}
-
-if (!stateCode) return null;
-
-// Remaining words → last chunk is city, the rest is street
-const mid = Math.floor(words.length / 2);
-street = words.slice(0, mid).join(' ');
-city = words.slice(mid).join(' ');
+if (!street || !city || !st || !zip) return null;
 
 return {
-street: street.trim(),
-city: city.trim(),
-state: stateCode,
-zip: zip
+formatted: `${street}, ${city}, ${st} ${zip}`
 };
-}
-const street = (parts[0] || '').trim();
-const city = (parts[1] || '').trim();
-
-const stateZipParts = (parts[2] || '').trim().split(/\s+/);
-const state = stateZipParts[0] || '';
-const zip5 = stateZipParts[1] || '';
-
-if (!street || !city || !state || !zip5) {
-console.warn('USPS: missing one of street/city/state/zip.');
+} catch (e) {
+console.error('USPS verify failed:', e);
 return null;
+}
 }
 
 const xmlPayload = `
@@ -639,30 +632,58 @@ const sendClientReceipt = SEND_CLIENT_RECEIPT !== 'false';
 
 const referenceNumber = `TL${Date.now().toString().slice(-6)}`;
 
-const addressForUsps = currentAddress || clientAddress || '';
+// ================= USPS Suggestion Gate (Upload Route) =====================
 
-/* --- Optional USPS validate for upload address (client + admin) --- */
+// Build a single address string from what the form sends (accept ANY format)
+const addressForUsps = String(
+req.body.fullAddress ||
+req.body.currentAddress ||
+currentAddress ||
+clientAddress ||
+''
+).trim();
+
+// Did customer already confirm?
+const addressConfirmed = String(
+req.body.addressConfirmed || req.body.address_confirmed || ''
+).toLowerCase().trim() === 'yes';
+
+// Normalize helper so small differences don’t break detection
+function normalizeAddr(s) {
+return String(s || '')
+.toLowerCase()
+.replace(/\s+/g, ' ')
+.replace(/,/g, '')
+.replace(/\./g, '')
+.trim();
+}
+
+// Call USPS (only if address exists)
 let uploadUspsSuggestion = null;
-
-try {
 if (addressForUsps && process.env.USPS_USER_ID) {
+try {
 uploadUspsSuggestion = await verifyAddressWithUSPS(addressForUsps);
-}
 } catch (e) {
-console.error('X USPS validation for upload form failed:', e);
+console.error('✖ USPS validation failed:', e);
+}
 }
 
-// If USPS suggested an address and the client has NOT confirmed yet,
-// send the suggestion back to the browser instead of finishing the upload.
-const addressConfirmed =
-(req.body.addressConfirmed || req.body.address_confirmed || '').toLowerCase();
+// Convert USPS response into a clean string
+let suggestedAddress = '';
+if (uploadUspsSuggestion) {
+if (typeof uploadUspsSuggestion === 'string') {
+suggestedAddress = uploadUspsSuggestion.trim();
+} else if (uploadUspsSuggestion.formatted) {
+suggestedAddress = String(uploadUspsSuggestion.formatted).trim();
+}
+}
 
-if (uploadUspsSuggestion && addressConfirmed !== 'yes') {
-const suggestedAddress =
-typeof uploadUspsSuggestion === 'string'
-? uploadUspsSuggestion
-: (uploadUspsSuggestion.formatted || '');
-
+// 🚨 STOP upload and show USPS box if suggestion differs
+if (
+suggestedAddress &&
+normalizeAddr(suggestedAddress) !== normalizeAddr(addressForUsps) &&
+!addressConfirmed
+) {
 return res.status(200).json({
 ok: false,
 type: 'address_mismatch',
@@ -672,44 +693,7 @@ message: 'USPS suggested a different address. Please confirm before continuing.'
 });
 }
 
-// ---- Decide if we should show USPS suggestion to the customer ----
-try {
-// Normalize suggestion into a simple string
-let suggestedAddress = '';
-
-if (uploadUspsSuggestion) {
-if (typeof uploadUspsSuggestion === 'string') {
-suggestedAddress = uploadUspsSuggestion.trim();
-} else if (uploadUspsSuggestion.formatted) {
-// in case verifyAddressWithUSPS returns { formatted: '...' }
-suggestedAddress = String(uploadUspsSuggestion.formatted).trim();
-}
-}
-
-const originalAddress = (addressForUsps || '').trim();
-const addressConfirmedFlag = String(req.body.addressConfirmed || '')
-.toLowerCase()
-.trim();
-
-const alreadyConfirmed = addressConfirmedFlag === 'yes';
-
-// If USPS has a different suggestion and customer has NOT confirmed yet,
-// send it back to the front-end instead of finishing the upload.
-if (
-suggestedAddress &&
-suggestedAddress !== originalAddress &&
-!alreadyConfirmed
-) {
-return res.status(200).json({
-ok: false,
-type: 'address_mismatch',
-suggestedAddress
-});
-}
-} catch (err) {
-console.error('USPS suggestion decision failed:', err);
-// continue with normal flow if something goes wrong here
-}
+// ✅ If we reach here → continue normal upload flow
   
 /* === Google Drive upload (non-blocking on failure) ==================== */
 try {
