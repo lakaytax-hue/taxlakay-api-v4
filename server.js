@@ -191,12 +191,68 @@ console.warn('USPS not configured or no address provided.');
 return null;
 }
 
-const parts = String(rawAddress).split(',');
-if (parts.length < 3) {
-console.warn('USPS: address not in expected "street, city, state zip" format.');
-return null;
+// ---------------- SMART ADDRESS PARSER (ACCEPTS ANY FORMAT) ----------------
+function smartParseAddress(raw) {
+if (!raw) return null;
+
+let text = raw.trim().replace(/\s+/g, ' ');
+const zipMatch = text.match(/(\d{5})(?:-\d{4})?$/);
+
+if (!zipMatch) return null;
+const zip = zipMatch[1];
+text = text.replace(zipMatch[0], '').trim();
+
+// List of states for matching
+const states = {
+'ALABAMA':'AL','ALASKA':'AK','ARIZONA':'AZ','ARKANSAS':'AR','CALIFORNIA':'CA',
+'COLORADO':'CO','CONNECTICUT':'CT','DELAWARE':'DE','FLORIDA':'FL','GEORGIA':'GA',
+'HAWAII':'HI','IDAHO':'ID','ILLINOIS':'IL','INDIANA':'IN','IOWA':'IA','KANSAS':'KS',
+'KENTUCKY':'KY','LOUISIANA':'LA','MAINE':'ME','MARYLAND':'MD','MASSACHUSETTS':'MA',
+'MICHIGAN':'MI','MINNESOTA':'MN','MISSISSIPPI':'MS','MISSOURI':'MO','MONTANA':'MT',
+'NEBRASKA':'NE','NEVADA':'NV','NEW HAMPSHIRE':'NH','NEW JERSEY':'NJ','NEW MEXICO':'NM',
+'NEW YORK':'NY','NORTH CAROLINA':'NC','NORTH DAKOTA':'ND','OHIO':'OH','OKLAHOMA':'OK',
+'OREGON':'OR','PENNSYLVANIA':'PA','RHODE ISLAND':'RI','SOUTH CAROLINA':'SC',
+'SOUTH DAKOTA':'SD','TENNESSEE':'TN','TEXAS':'TX','UTAH':'UT','VERMONT':'VT',
+'VIRGINIA':'VA','WASHINGTON':'WA','WEST VIRGINIA':'WV','WISCONSIN':'WI','WYOMING':'WY'
+};
+
+let stateCode = null;
+let city = null;
+let street = null;
+
+const words = text.split(/[, ]+/);
+
+// Try last words for state
+for (let i = words.length - 1; i >= 0; i--) {
+const w = words[i].toUpperCase();
+
+if (states[w]) {
+stateCode = states[w];
+words.splice(i, 1);
+break;
 }
 
+if (w.length === 2 && Object.values(states).includes(w)) {
+stateCode = w;
+words.splice(i, 1);
+break;
+}
+}
+
+if (!stateCode) return null;
+
+// Remaining words → last chunk is city, the rest is street
+const mid = Math.floor(words.length / 2);
+street = words.slice(0, mid).join(' ');
+city = words.slice(mid).join(' ');
+
+return {
+street: street.trim(),
+city: city.trim(),
+state: stateCode,
+zip: zip
+};
+}
 const street = (parts[0] || '').trim();
 const city = (parts[1] || '').trim();
 
