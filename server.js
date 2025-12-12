@@ -839,7 +839,7 @@ Uploaded at: ${new Date().toLocaleString()}
 <hr style="border:none;border-top:1px solid #e5e7eb;margin:16px 0;">
 <p style="font-size:13px;color:#475569;margin:0;">
 📧 <a href="mailto:lakaytax@gmail.com">lakaytax@gmail.com</a> &nbsp;|&nbsp;
-📞 <a href="tel:13179359067">(317) 935-9067</a> &nbsp;|&nbsp;
+📞 <a href="tel:18639344823">(863) 934-4823</a> &nbsp;|&nbsp;
 💻 <a href="https://www.taxlakay.com">www.taxlakay.com</a>
 </p>
 </div>
@@ -871,7 +871,7 @@ https://www.taxlakay.com/filing-status
 Warm regards,
 The Tax Lakay Team
 📧 lakaytax@gmail.com
-📞 (317) 935-9067
+📞 (863) 934-4823
 💻 https://www.taxlakay.com
 `.trim();
 
@@ -917,7 +917,7 @@ https://www.taxlakay.com/filing-status
 <p style="margin: 5px 0; color: #475569;"><strong>Warm regards,</strong><br>The Tax Lakay Team</p>
 <p style="margin: 8px 0; color: #64748b;">
 📧 <a href="mailto:lakaytax@gmail.com" style="color: #1e63ff;">lakaytax@gmail.com</a> &nbsp;
-📞 <a href="tel:3179359067" style="color: #1e63ff;">(317) 935-9067</a><br>
+📞 <a href="tel:3179359067" style="color: #1e63ff;">(863) 934-4823</a><br>
 💻 <a href="https://www.taxlakay.com" style="color: #1e63ff;">www.taxlakay.com</a>
 </p>
 </div>
@@ -1136,7 +1136,7 @@ doc
 .moveDown(2)
 .fillColor('#475569')
 .fontSize(10)
-.text('📞 (317) 935-9067 | 🌐 www.taxlakay.com | 📧 lakaytax@gmail.com', {
+.text('📞 (863) 934-4823 | 🌐 www.taxlakay.com | 📧 lakaytax@gmail.com', {
 align: 'center'
 });
 doc
@@ -1529,12 +1529,12 @@ You can check your current status online at:
 https://www.taxlakay.com/filing-status
 (Use your unique Reference ID: ${ref})
 
-If you have any questions, you can reply to this email or call us at (317) 935-9067.
+If you have any questions, you can reply to this email or call us at (863) 934-4823.
 
 Warm regards,
 Tax Lakay
 📧 lakaytax@gmail.com
-📞 (317) 935-9067
+📞 (863) 934-4823
 💻 https://www.taxlakay.com
 `.trim();
 
@@ -1580,14 +1580,14 @@ https://www.taxlakay.com/filing-status
 
 <p style="font-size:14px;">
 If you have any questions, you can reply to this email or call us at
-<strong>(317) 935-9067</strong>.
+<strong>(863) 934-4823</strong>.
 </p>
 
 <hr style="border:none;border-top:1px solid #e5e7eb;margin:18px 0;">
 
 <p style="text-align:center;font-size:13px;color:#64748b;margin:0;">
 📧 <a href="mailto:lakaytax@gmail.com" style="color:#1e63ff;">lakaytax@gmail.com</a> &nbsp;|&nbsp;
-📞 <a href="tel:13179359067" style="color:#1e63ff;">(317) 935-9067</a> &nbsp;|&nbsp;
+📞 <a href="tel:18639344823" style="color:#1e63ff;">(863) 934-4823</a> &nbsp;|&nbsp;
 💻 <a href="https://www.taxlakay.com" style="color:#1e63ff;">www.taxlakay.com</a>
 </p>
 </div>
