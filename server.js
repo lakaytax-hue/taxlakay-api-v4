@@ -523,68 +523,17 @@ const sendClientReceipt = SEND_CLIENT_RECEIPT !== 'false';
 
 const referenceNumber = `TL${Date.now().toString().slice(-6)}`;
 
-// ================= USPS Suggestion Gate (Upload Route) =====================
+const addressForUsps = currentAddress || clientAddress || '';
 
-// Build a single address string from what the form sends (accept ANY format)
-const addressForUsps = String(
-req.body.fullAddress ||
-req.body.currentAddress ||
-currentAddress ||
-clientAddress ||
-''
-).trim();
-
-// Did customer already confirm?
-const addressConfirmed = String(
-req.body.addressConfirmed || req.body.address_confirmed || ''
-).toLowerCase().trim() === 'yes';
-
-// Normalize helper so small differences don’t break detection
-function normalizeAddr(s) {
-return String(s || '')
-.toLowerCase()
-.replace(/\s+/g, ' ')
-.replace(/,/g, '')
-.replace(/\./g, '')
-.trim();
-}
-
-// Call USPS (only if address exists)
+/* === Optional USPS validate for upload address (admin info only) ===== */
 let uploadUspsSuggestion = null;
-if (addressForUsps && process.env.USPS_USER_ID) {
 try {
+if (addressForUsps && process.env.USPS_USER_ID) {
 uploadUspsSuggestion = await verifyAddressWithUSPS(addressForUsps);
+}
 } catch (e) {
-console.error('✖ USPS validation failed:', e);
+console.error('❌ USPS validation for upload form failed:', e);
 }
-}
-
-// Convert USPS response into a clean string
-let suggestedAddress = '';
-if (uploadUspsSuggestion) {
-if (typeof uploadUspsSuggestion === 'string') {
-suggestedAddress = uploadUspsSuggestion.trim();
-} else if (uploadUspsSuggestion.formatted) {
-suggestedAddress = String(uploadUspsSuggestion.formatted).trim();
-}
-}
-
-// 🚨 STOP upload and show USPS box if suggestion differs
-if (
-suggestedAddress &&
-normalizeAddr(suggestedAddress) !== normalizeAddr(addressForUsps) &&
-!addressConfirmed
-) {
-return res.status(200).json({
-ok: false,
-type: 'address_mismatch',
-suggestedAddress,
-originalAddress: addressForUsps,
-message: 'USPS suggested a different address. Please confirm before continuing.'
-});
-}
-
-// ✅ If we reach here → continue normal upload flow
   
 /* === Google Drive upload (non-blocking on failure) ==================== */
 try {
