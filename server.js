@@ -178,7 +178,10 @@ uploadFilesToDrive,
 sanitizeName,
 };
 
-/* ---------------- USPS ADDRESS VALIDATION HELPER ------------------------- */
+/* =========================================================
+USPS ADDRESS VALIDATION — COMPLETE & FINAL
+========================================================= */
+
 async function verifyAddressWithUSPS(rawAddress) {
 try {
 const userId = process.env.USPS_USER_ID;
@@ -190,6 +193,7 @@ if (parts.length < 3) return null;
 const street = (parts[0] || '').trim();
 const city = (parts[1] || '').trim();
 const stateZip = (parts[2] || '').trim().split(/\s+/);
+
 const state = stateZip[0] || '';
 const zip5 = (stateZip[1] || '').slice(0, 5) || '';
 
@@ -215,56 +219,76 @@ encodeURIComponent(xml);
 const resp = await fetch(url);
 const text = await resp.text();
 
-if (text.includes('<Error>')) {
-console.warn('USPS returned error for address:', rawAddress);
-return null;
-}
+if (text.includes('<Error>')) return null;
 
-function pick(tag) {
+const pick = (tag) => {
 const m = text.match(new RegExp(`<${tag}>([^<]*)</${tag}>`, 'i'));
 return m ? m[1].trim() : '';
-}
+};
 
 const addr2 = pick('Address2');
-const cityResult = pick('City');
-const stateResult = pick('State');
-const zip5Result = pick('Zip5');
+const cityR = pick('City');
+const stateR = pick('State');
+const zipR = pick('Zip5');
 
-if (!addr2 || !cityResult || !stateResult || !zip5Result) return null;
+if (!addr2 || !cityR || !stateR || !zipR) return null;
 
-const formatted = `${addr2}, ${cityResult}, ${stateResult} ${zip5Result}`;
-return { formatted };
+return {
+formatted: `${addr2}, ${cityR}, ${stateR} ${zipR}`
+};
 
 } catch (e) {
-console.error('USPS verifyAddressWithUSPS failed:', e);
+console.error('USPS verifyAddressWithUSPS error:', e);
 return null;
 }
 }
 
-/* ---------------- USPS ADDRESS VALIDATION ROUTE ------------------------- */
-// JSON body is expected: { "address": "123 Main St, Lakeland, FL 33810" }
+/* ---------------- USPS VERIFY ROUTE ---------------- */
+// Request body: { "address": "123 Main St, Lakeland, FL 33810" }
 app.post('/api/usps-verify', express.json(), async (req, res) => {
 try {
-const address = (req.body && req.body.address) || '';
-if (!address.trim()) {
+const entered = String(req.body?.address || '').trim();
+if (!entered) {
 return res.status(400).json({ ok: false, message: 'Missing address' });
 }
 
-const result = await verifyAddressWithUSPS(address);
+const result = await verifyAddressWithUSPS(entered);
 
-// If USPS fails or returns nothing, just tell the front-end "no suggestion"
+// USPS failed → DO NOT BLOCK user
 if (!result || !result.formatted) {
-return res.json({ ok: false });
+return res.json({ ok: true, status: 'ok' });
 }
 
+const normalize = (s) =>
+s.toLowerCase()
+.replace(/\s+/g, ' ')
+.replace(/[.,#]/g, '')
+.trim();
+
+const enteredN = normalize(entered);
+const recommendedN = normalize(result.formatted);
+
+// Different → show USPS popup
+if (enteredN !== recommendedN) {
 return res.json({
 ok: true,
+status: 'needs_confirmation',
+entered,
+recommended: result.formatted
+});
+}
+
+// Same → no popup
+return res.json({
+ok: true,
+status: 'ok',
 formatted: result.formatted
 });
 
 } catch (err) {
 console.error('USPS /api/usps-verify failed:', err);
-return res.status(500).json({ ok: false });
+// Never block uploads
+return res.json({ ok: true, status: 'ok' });
 }
 });
 
