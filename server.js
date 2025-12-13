@@ -374,31 +374,22 @@ return { ok:false, found:false, showBox:true, message: e.message || 'USPS verify
 /* ---------------- USPS VERIFY ROUTE (POPUP-READY) ----------------
 app.post('/api/usps-verify', express.json(), async (req, res) => {
 try {
-const address = req.body.address;
-if (!address) {
-return res.json({ ok: false, suggestions: [] });
-}
+const entered = String(req.body?.address || '').trim();
+if (!entered) return res.status(400).json({ ok:false, found:false, showBox:true, message:'Missing address', enteredLine:'', recommendedLine:'' });
 
-const result = await verifyAddressWithUSPS(address);
+const result = await verifyAddressWithUSPS(entered);
 
-if (!result || result.length === 0) {
+// Ensure the front-end always gets the fields it expects
 return res.json({
-ok: true,
-suggestions: []
+ok: !!result.ok,
+found: !!result.found,
+showBox: !!result.showBox,
+enteredLine: result.enteredLine || entered,
+recommendedLine: result.recommendedLine || '',
+message: result.message || ''
 });
-}
-
-return res.json({
-ok: true,
-suggestions: result
-});
-
 } catch (err) {
-console.error('USPS VERIFY ERROR:', err.message);
-return res.status(200).json({
-ok: false,
-suggestions: []
-});
+return res.json({ ok:false, found:false, showBox:true, message: err.message || 'Server error', enteredLine:'', recommendedLine:'' });
 }
 });
 
