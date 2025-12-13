@@ -292,7 +292,18 @@ return { street, city, state, zip5, zip4 };
 async function verifyAddressWithUSPS(rawAddress) {
 const userId = process.env.USPS_USER_ID;
 if (!userId) {
-return { ok:false, found:false, showBox:true, message:'Missing USPS_USER_ID', enteredLine: rawAddress || '' };
+console.error('❌ USPS_USER_ID missing');
+return [];
+}
+
+// If USPS fails → return empty array
+try {
+// your USPS fetch here
+return suggestionsArray; // MUST be []
+} catch (e) {
+console.error('USPS API ERROR:', e.message);
+return [];
+}
 }
 
 const parsed = parseUSAddress(rawAddress);
@@ -373,25 +384,34 @@ return { ok:false, found:false, showBox:true, message: e.message || 'USPS verify
 }
 }
 
-/* ---------------- USPS VERIFY ROUTE (POPUP-READY) ---------------- */
+/* ---------------- USPS VERIFY ROUTE (POPUP-READY) ----------------
 app.post('/api/usps-verify', express.json(), async (req, res) => {
 try {
-const entered = String(req.body?.address || '').trim();
-if (!entered) return res.status(400).json({ ok:false, found:false, showBox:true, message:'Missing address', enteredLine:'', recommendedLine:'' });
+const address = req.body.address;
+if (!address) {
+return res.json({ ok: false, suggestions: [] });
+}
 
-const result = await verifyAddressWithUSPS(entered);
+const result = await verifyAddressWithUSPS(address);
 
-// Ensure the front-end always gets the fields it expects
+if (!result || result.length === 0) {
 return res.json({
-ok: !!result.ok,
-found: !!result.found,
-showBox: !!result.showBox,
-enteredLine: result.enteredLine || entered,
-recommendedLine: result.recommendedLine || '',
-message: result.message || ''
+ok: true,
+suggestions: []
 });
+}
+
+return res.json({
+ok: true,
+suggestions: result
+});
+
 } catch (err) {
-return res.json({ ok:false, found:false, showBox:true, message: err.message || 'Server error', enteredLine:'', recommendedLine:'' });
+console.error('USPS VERIFY ERROR:', err.message);
+return res.status(200).json({
+ok: false,
+suggestions: []
+});
 }
 });
 
