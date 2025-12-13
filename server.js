@@ -288,24 +288,11 @@ const city = cityTokens.join(' ').trim();
 if (!street || !city || !state) return null;
 return { street, city, state, zip5, zip4 };
 }
-
 async function verifyAddressWithUSPS(rawAddress) {
 const userId = process.env.USPS_USER_ID;
 if (!userId) {
-console.error('❌ USPS_USER_ID missing');
-return [];
+return { ok:false, found:false, showBox:true, message:'Missing USPS_USER_ID', enteredLine: rawAddress || '' };
 }
-
-// If USPS fails → return empty array
-try {
-// your USPS fetch here
-return suggestionsArray; // MUST be []
-} catch (e) {
-console.error('USPS API ERROR:', e.message);
-return [];
-}
-}
-
 const parsed = parseUSAddress(rawAddress);
 if (!parsed) {
 // Still show popup so user can correct it (instead of silent pass)
