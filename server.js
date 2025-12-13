@@ -179,25 +179,138 @@ sanitizeName,
 };
 
 /* =========================================================
-USPS ADDRESS VALIDATION — COMPLETE & FINAL
+USPS ADDRESS VALIDATION — COMPLETE (handles NO commas)
 ========================================================= */
+
+const STATE_MAP = {
+AL:'AL', ALABAMA:'AL',
+AK:'AK', ALASKA:'AK',
+AZ:'AZ', ARIZONA:'AZ',
+AR:'AR', ARKANSAS:'AR',
+CA:'CA', CALIFORNIA:'CA',
+CO:'CO', COLORADO:'CO',
+CT:'CT', CONNECTICUT:'CT',
+DE:'DE', DELAWARE:'DE',
+DC:'DC', 'DISTRICTOFCOLUMBIA':'DC',
+FL:'FL', FLORIDA:'FL',
+GA:'GA', GEORGIA:'GA',
+HI:'HI', HAWAII:'HI',
+ID:'ID', IDAHO:'ID',
+IL:'IL', ILLINOIS:'IL',
+IN:'IN', INDIANA:'IN',
+IA:'IA', IOWA:'IA',
+KS:'KS', KANSAS:'KS',
+KY:'KY', KENTUCKY:'KY',
+LA:'LA', LOUISIANA:'LA',
+ME:'ME', MAINE:'ME',
+MD:'MD', MARYLAND:'MD',
+MA:'MA', MASSACHUSETTS:'MA',
+MI:'MI', MICHIGAN:'MI',
+MN:'MN', MINNESOTA:'MN',
+MS:'MS', MISSISSIPPI:'MS',
+MO:'MO', MISSOURI:'MO',
+MT:'MT', MONTANA:'MT',
+NE:'NE', NEBRASKA:'NE',
+NV:'NV', NEVADA:'NV',
+NH:'NH', NEWHAMPSHIRE:'NH',
+NJ:'NJ', NEWJERSEY:'NJ',
+NM:'NM', NEWMEXICO:'NM',
+NY:'NY', NEWYORK:'NY',
+NC:'NC', NORTHCAROLINA:'NC',
+ND:'ND', NORTHDAKOTA:'ND',
+OH:'OH', OHIO:'OH',
+OK:'OK', OKLAHOMA:'OK',
+OR:'OR', OREGON:'OR',
+PA:'PA', PENNSYLVANIA:'PA',
+RI:'RI', RHODEISLAND:'RI',
+SC:'SC', SOUTHCAROLINA:'SC',
+SD:'SD', SOUTHDAKOTA:'SD',
+TN:'TN', TENNESSEE:'TN',
+TX:'TX', TEXAS:'TX',
+UT:'UT', UTAH:'UT',
+VT:'VT', VERMONT:'VT',
+VA:'VA', VIRGINIA:'VA',
+WA:'WA', WASHINGTON:'WA',
+WV:'WV', WESTVIRGINIA:'WV',
+WI:'WI', WISCONSIN:'WI',
+WY:'WY', WYOMING:'WY',
+};
+
+function normStateToken(token) {
+const t = String(token || '')
+.toUpperCase()
+.replace(/[^A-Z]/g, ''); // remove spaces/dots
+return STATE_MAP[t] || '';
+}
+
+function parseUSAddress(raw) {
+const s = String(raw || '').trim().replace(/\s+/g, ' ');
+if (!s) return null;
+
+// ZIP at end
+const zipMatch = s.match(/(\d{5})(?:-\d{4})?\s*$/);
+if (!zipMatch) return null;
+const zip5 = zipMatch[1];
+
+const noZip = s.replace(/(\d{5})(?:-\d{4})?\s*$/, '').trim();
+
+// If commas exist, use that first
+if (noZip.includes(',')) {
+const parts = noZip.split(',').map(x => x.trim()).filter(Boolean);
+// Expect: street, city, state
+if (parts.length >= 3) {
+const street = parts[0];
+const city = parts[1];
+const state = normStateToken(parts[2]);
+if (street && city && state) return { street, city, state, zip5 };
+}
+}
+
+// No commas: split by spaces, detect state near the end
+const tokens = noZip.split(' ').filter(Boolean);
+if (tokens.length < 3) return null;
+
+// last token may be state (IN) or city if state spelled before it
+const last = tokens[tokens.length - 1];
+const prev = tokens[tokens.length - 2];
+
+let state = normStateToken(last);
+let cityTokens = [];
+let streetTokens = [];
+
+if (state) {
+// ... city state zip
+cityTokens = [prev];
+streetTokens = tokens.slice(0, tokens.length - 2);
+} else {
+// Maybe ... state city zip (like "Indiana Indianapolis 46226")
+const stateFromPrev = normStateToken(prev);
+if (stateFromPrev) {
+state = stateFromPrev;
+cityTokens = [last];
+streetTokens = tokens.slice(0, tokens.length - 2);
+} else {
+// Still unknown
+return null;
+}
+}
+
+const street = streetTokens.join(' ').trim();
+const city = cityTokens.join(' ').trim();
+if (!street || !city || !state) return null;
+
+return { street, city, state, zip5 };
+}
 
 async function verifyAddressWithUSPS(rawAddress) {
 try {
 const userId = process.env.USPS_USER_ID;
 if (!userId || !rawAddress) return null;
 
-const parts = String(rawAddress).split(',');
-if (parts.length < 3) return null;
+const parsed = parseUSAddress(rawAddress);
+if (!parsed) return null;
 
-const street = (parts[0] || '').trim();
-const city = (parts[1] || '').trim();
-const stateZip = (parts[2] || '').trim().split(/\s+/);
-
-const state = stateZip[0] || '';
-const zip5 = (stateZip[1] || '').slice(0, 5) || '';
-
-if (!street || !city || !state || !zip5) return null;
+const { street, city, state, zip5 } = parsed;
 
 const xml =
 `<AddressValidateRequest USERID="${userId}">` +
@@ -229,13 +342,15 @@ return m ? m[1].trim() : '';
 const addr2 = pick('Address2');
 const cityR = pick('City');
 const stateR = pick('State');
-const zipR = pick('Zip5');
+const zip5R = pick('Zip5');
+const zip4R = pick('Zip4');
 
-if (!addr2 || !cityR || !stateR || !zipR) return null;
+if (!addr2 || !cityR || !stateR || !zip5R) return null;
 
-return {
-formatted: `${addr2}, ${cityR}, ${stateR} ${zipR}`
-};
+const zipFull = zip4R ? `${zip5R}-${zip4R}` : zip5R;
+const formatted = `${addr2}, ${cityR}, ${stateR} ${zipFull}`;
+
+return { formatted };
 
 } catch (e) {
 console.error('USPS verifyAddressWithUSPS error:', e);
@@ -244,32 +359,22 @@ return null;
 }
 
 /* ---------------- USPS VERIFY ROUTE ---------------- */
-// Request body: { "address": "123 Main St, Lakeland, FL 33810" }
 app.post('/api/usps-verify', express.json(), async (req, res) => {
 try {
 const entered = String(req.body?.address || '').trim();
-if (!entered) {
-return res.status(400).json({ ok: false, message: 'Missing address' });
-}
+if (!entered) return res.status(400).json({ ok: false, message: 'Missing address' });
 
 const result = await verifyAddressWithUSPS(entered);
 
-// USPS failed → DO NOT BLOCK user
+// USPS failed -> do NOT block
 if (!result || !result.formatted) {
 return res.json({ ok: true, status: 'ok' });
 }
 
 const normalize = (s) =>
-s.toLowerCase()
-.replace(/\s+/g, ' ')
-.replace(/[.,#]/g, '')
-.trim();
+String(s || '').toLowerCase().replace(/\s+/g, ' ').replace(/[.,#]/g,'').trim();
 
-const enteredN = normalize(entered);
-const recommendedN = normalize(result.formatted);
-
-// Different → show USPS popup
-if (enteredN !== recommendedN) {
+if (normalize(entered) !== normalize(result.formatted)) {
 return res.json({
 ok: true,
 status: 'needs_confirmation',
@@ -278,16 +383,10 @@ recommended: result.formatted
 });
 }
 
-// Same → no popup
-return res.json({
-ok: true,
-status: 'ok',
-formatted: result.formatted
-});
+return res.json({ ok: true, status: 'ok', formatted: result.formatted });
 
 } catch (err) {
 console.error('USPS /api/usps-verify failed:', err);
-// Never block uploads
 return res.json({ ok: true, status: 'ok' });
 }
 });
