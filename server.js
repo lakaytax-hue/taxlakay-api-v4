@@ -293,6 +293,19 @@ const userId = process.env.USPS_USER_ID;
 if (!userId) {
 return { ok:false, found:false, showBox:true, message:'Missing USPS_USER_ID', enteredLine: rawAddress || '' };
 }
+console.error('❌ USPS_USER_ID missing');
+return [];
+{
+// If USPS fails → return empty array
+try {
+// your USPS fetch here
+return suggestionsArray; // MUST be []
+} catch (e) {
+console.error('USPS API ERROR:', e.message);
+return [];
+}
+}
+
 const parsed = parseUSAddress(rawAddress);
 if (!parsed) {
 // Still show popup so user can correct it (instead of silent pass)
