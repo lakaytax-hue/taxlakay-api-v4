@@ -403,16 +403,23 @@ const ALLOWED_HOSTS = new Set([
 ]);
 
 function isAllowedOrigin(origin) {
+// Allow requests with no origin (Render health checks, curl, server-to-server)
 if (!origin) return true;
-try {
-const u = new URL(origin);
-if (u.protocol !== 'https:') return false;
-if (ALLOWED_HOSTS.has(u.host)) return true;
-if (/\.googleusercontent\.com$/i.test(u.host)) return true;
-return false;
-} catch {
-return false;
-}
+
+const allowed = [
+'https://www.taxlakay.com',
+'https://taxlakay.com',
+'https://sites.google.com',
+'https://www.sites.google.com'
+];
+
+// Allow any Google Sites subdomain
+if (origin.startsWith('https://sites.google.com')) return true;
+
+// ✅ Allow Google embed/frames origins
+if (origin.includes('googleusercontent.com')) return true;
+
+return allowed.includes(origin);
 }
 
 app.use(
