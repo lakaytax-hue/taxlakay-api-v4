@@ -399,39 +399,46 @@ recommendedLine: ''
 }
 }
 
-/* ---------------- USPS VERIFY ROUTE (POPUP-READY) ---------------- */
 app.post('/api/usps-verify', express.json(), async (req, res) => {
 try {
 const entered = String(req.body?.address || '').trim();
+
 if (!entered) {
-return res.status(400).json({
-ok: false, found: false, showBox: true,
-message: 'Missing address',
+return res.json({
+ok: false,
+found: false,
+showBox: true,
 enteredLine: '',
-recommendedLine: ''
+recommendedLine: '',
+message: 'Address is required'
 });
 }
 
 const result = await verifyAddressWithUSPS(entered);
 
+// 🔐 HARD GUARANTEE: always send expected fields
 return res.json({
 ok: !!result.ok,
 found: !!result.found,
-showBox: !!result.showBox,
+showBox: result.showBox !== false,
 enteredLine: result.enteredLine || entered,
 recommendedLine: result.recommendedLine || '',
 message: result.message || ''
 });
 
 } catch (err) {
+console.error('USPS VERIFY ERROR:', err);
 return res.json({
-ok: false, found: false, showBox: true,
-message: err && err.message ? err.message : 'Server error',
+ok: false,
+found: false,
+showBox: true,
 enteredLine: String(req.body?.address || ''),
-recommendedLine: ''
+recommendedLine: '',
+message: 'USPS verification failed. You may continue.'
 });
 }
 });
+
 /* ----------------------------- CORS (unified) ----------------------------- */
 const ALLOWED_HOSTS = new Set([
 'www.taxlakay.com',
