@@ -293,7 +293,7 @@ const userId = process.env.USPS_USER_ID;
 if (!userId) {
 return { ok:false, found:false, showBox:true, message:'Missing USPS_USER_ID', enteredLine: rawAddress || '' };
 }
-console.error('611O6TAXLA473');
+console.error('❌ USPS_USER_ID missing');
 return [];
 {
 // If USPS fails → return empty array
