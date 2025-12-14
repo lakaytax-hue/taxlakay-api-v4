@@ -289,7 +289,7 @@ if (!street || !city || !state) return null;
 return { street, city, state, zip5, zip4 };
 }
 async function verifyAddressWithUSPS(rawAddress) {
-const userId =process.env.USPS_USER_ID;
+const userId = process.env.USPS_USER_ID;
 if (!userId) {
 return { ok:false, found:false, showBox:true, message:'Missing USPS_USER_ID', enteredLine: rawAddress || '' };
 }
@@ -383,6 +383,7 @@ recommendedLine
 return { ok:false, found:false, showBox:true, message: e.message || 'USPS verify failed', enteredLine, recommendedLine:'' };
 }
 }
+
 /* ---------------- USPS VERIFY ROUTE (POPUP-READY) ----------------
 app.post('/api/usps-verify', express.json(), async (req, res) => {
 try {
