@@ -289,58 +289,39 @@ if (!street || !city || !state) return null;
 return { street, city, state, zip5, zip4 };
 }
 async function verifyAddressWithUSPS(rawAddress) {
+const userId =process.env.USPS_USER_ID;
+if (!userId) {
+return { ok:false, found:false, showBox:true, message:'Missing USPS_USER_ID', enteredLine: rawAddress || '' };
+}
+console.error('❌ USPS_USER_ID missing');
+return [];
+{
+// If USPS fails → return empty array
 try {
-const userId = process.env.USPS_USER_ID;
-if (!userId || !rawAddress) return null;
-
-// Let USPS parse the address — do NOT split by commas
-const xml = `
-<AddressValidateRequest USERID="${userId}">
-<Revision>1</Revision>
-<Address ID="0">
-<Address1></Address1>
-<Address2>${rawAddress}</Address2>
-<City></City>
-<State></State>
-<Zip5></Zip5>
-<Zip4></Zip4>
-</Address>
-</AddressValidateRequest>
-`.trim();
-
-const url =
-'https://secure.shippingapis.com/ShippingAPI.dll' +
-'?API=Verify&XML=' +
-encodeURIComponent(xml);
-
-const resp = await fetch(url);
-const text = await resp.text();
-
-// USPS returns error inside XML, not HTTP
-if (text.includes('<Error>')) return null;
-
-// VERY simple extraction (safe)
-const get = (tag) => {
-const m = text.match(new RegExp(`<${tag}>(.*?)</${tag}>`));
-return m ? m[1] : '';
-};
-
-const street = get('Address2');
-const city = get('City');
-const state = get('State');
-const zip5 = get('Zip5');
-
-if (!street || !city || !state) return null;
-
-return {
-standardized: `${street}, ${city}, ${state} ${zip5}`.trim()
-};
-
+// your USPS fetch here
+return suggestionsArray; // MUST be []
 } catch (e) {
-console.error('USPS verify error:', e.message);
-return null;
+console.error('USPS API ERROR:', e.message);
+return [];
 }
 }
+
+const parsed = parseUSAddress(rawAddress);
+if (!parsed) {
+// Still show popup so user can correct it (instead of silent pass)
+return {
+ok:true,
+found:false,
+showBox:true,
+message:'Please enter address like: "Street, City, ST ZIP".',
+enteredLine: String(rawAddress || '').trim()
+};
+}
+
+const { street, city, state, zip5 } = parsed;
+
+// Build entered line for popup
+const enteredLine = formatAddressLine(street, city, state, zip5, '');
 
 // USPS Verify (AddressValidate)
 const xml = `
