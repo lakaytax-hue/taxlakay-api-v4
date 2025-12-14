@@ -289,98 +289,60 @@ if (!street || !city || !state) return null;
 return { street, city, state, zip5, zip4 };
 }
 async function verifyAddressWithUSPS(rawAddress) {
-const userId =process.env.USPS_USER_ID;
-if (!userId) {
-return { ok:false, found:false, showBox:true, message:'Missing USPS_USER_ID', enteredLine: rawAddress || '' };
-}
-console.error('❌ USPS_USER_ID missing');
-return [];
-{
-// If USPS fails → return empty array
 try {
-// your USPS fetch here
-return suggestionsArray; // MUST be []
-} catch (e) {
-console.error('USPS API ERROR:', e.message);
-return [];
-}
+const userId = process.env.USPS_USER_ID;
+if (!userId || !rawAddress) {
+console.error('❌ USPS_USER_ID missing or address empty');
+return null;
 }
 
-const parsed = parseUSAddress(rawAddress);
-if (!parsed) {
-// Still show popup so user can correct it (instead of silent pass)
-return {
-ok:true,
-found:false,
-showBox:true,
-message:'Please enter address like: "Street, City, ST ZIP".',
-enteredLine: String(rawAddress || '').trim()
-};
-}
+const normalized = String(rawAddress)
+.replace(/\n+/g, ' ')
+.replace(/\s{2,}/g, ' ')
+.trim();
 
-const { street, city, state, zip5 } = parsed;
-
-// Build entered line for popup
-const enteredLine = formatAddressLine(street, city, state, zip5, '');
-
-// USPS Verify (AddressValidate)
 const xml = `
-<AddressValidateRequest USERID="${escapeXml(userId)}">
+<AddressValidateRequest USERID="${userId}">
 <Revision>1</Revision>
 <Address ID="0">
 <Address1></Address1>
-<Address2>${escapeXml(street)}</Address2>
-<City>${escapeXml(city)}</City>
-<State>${escapeXml(state)}</State>
-<Zip5>${escapeXml(zip5 || '')}</Zip5>
+<Address2>${normalized}</Address2>
+<City></City>
+<State></State>
+<Zip5></Zip5>
 <Zip4></Zip4>
 </Address>
 </AddressValidateRequest>
 `.trim();
 
-const url = `https://secure.shippingapis.com/ShippingAPI.dll?API=Verify&XML=${encodeURIComponent(xml)}`;
+const url =
+'https://secure.shippingapis.com/ShippingAPI.dll?API=Verify&XML=' +
+encodeURIComponent(xml);
 
-try {
 const resp = await fetch(url);
 const text = await resp.text();
 
-// If USPS returns <Error>, show popup but with "no match"
 if (text.includes('<Error>')) {
-const msg = (text.match(/<Description>([\s\S]*?)<\/Description>/i)?.[1] || 'USPS could not verify this address.').trim();
-return { ok:true, found:false, showBox:true, message: msg, enteredLine, recommendedLine:'' };
+console.warn('⚠️ USPS returned error');
+return null;
 }
 
 const pick = (tag) => {
-const m = text.match(new RegExp(`<${tag}>([\\s\\S]*?)<\\/${tag}>`, 'i'));
-return m ? String(m[1] || '').trim() : '';
+const m = text.match(new RegExp(`<${tag}>([^<]*)</${tag}>`, 'i'));
+return m ? m[1].trim() : '';
 };
 
-const addr2 = pick('Address2');
-const cityR = pick('City');
-const stateR = pick('State');
-const zip5R = pick('Zip5');
-const zip4R = pick('Zip4');
+const street = pick('Address2');
+const city = pick('City');
+const state = pick('State');
+const zip5 = pick('Zip5');
 
-const found = !!(addr2 && cityR && stateR && zip5R);
-const recommendedLine = found
-? formatAddressLine(addr2, cityR, stateR, zip5R, zip4R)
-: '';
+if (!street || !city || !state || !zip5) return null;
 
-// show popup if:
-// - not found (so user can fix/continue)
-// - OR found but different than entered
-const showBox = !found ? true : (normalizeAddr(enteredLine) !== normalizeAddr(recommendedLine));
-
-return {
-ok:true,
-found,
-showBox,
-message: found ? '' : 'No USPS match found. You can edit the address or continue.',
-enteredLine,
-recommendedLine
-};
-} catch (e) {
-return { ok:false, found:false, showBox:true, message: e.message || 'USPS verify failed', enteredLine, recommendedLine:'' };
+return `${street}, ${city}, ${state} ${zip5}`;
+} catch (err) {
+console.error('❌ USPS verification failed:', err);
+return null;
 }
 }
 
