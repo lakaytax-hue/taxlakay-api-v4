@@ -342,23 +342,6 @@ return null;
 }
 }
 
-const parsed = parseUSAddress(rawAddress);
-if (!parsed) {
-// Still show popup so user can correct it (instead of silent pass)
-return {
-ok:true,
-found:false,
-showBox:true,
-message:'Please enter address like: "Street, City, ST ZIP".',
-enteredLine: String(rawAddress || '').trim()
-};
-}
-
-const { street, city, state, zip5 } = parsed;
-
-// Build entered line for popup
-const enteredLine = formatAddressLine(street, city, state, zip5, '');
-
 // USPS Verify (AddressValidate)
 const xml = `
 <AddressValidateRequest USERID="${escapeXml(userId)}">
