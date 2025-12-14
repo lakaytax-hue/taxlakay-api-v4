@@ -179,10 +179,11 @@ sanitizeName,
 };
 
 /* =========================================================
-USPS ADDRESS VALIDATION — POPUP-READY RESPONSE
+USPS ADDRESS VALIDATION — POPUP-READY RESPONSE (FIXED)
 - Handles commas OR no commas
 - ZIP optional (better if provided)
-- Always returns: showBox, found, enteredLine, recommendedLine, message
+- Always returns:
+ok, found, showBox, enteredLine, recommendedLine, message
 ========================================================= */
 
 const STATE_MAP = {
@@ -233,7 +234,7 @@ return [line1, line2].filter(Boolean).join('\n').trim();
 * Accepts:
 * - "929 Gilmore Ave Apt 2, Lakeland, FL 33801"
 * - "929 Gilmore Ave Apt 2 Lakeland FL 33801"
-* ZIP optional (still returns street/city/state when possible)
+* ZIP optional
 */
 function parseUSAddress(raw) {
 const s = String(raw || '').trim().replace(/\s+/g, ' ');
@@ -266,7 +267,6 @@ if (street && city && state) return { street, city, state, zip5, zip4 };
 const tokens = base.split(' ').filter(Boolean);
 if (tokens.length < 3) return null;
 
-// Find a state token scanning backward (last ~4 tokens)
 let stateIndex = -1;
 let state = '';
 for (let i = tokens.length - 1; i >= Math.max(0, tokens.length - 4); i--) {
@@ -275,55 +275,54 @@ if (st) { state = st; stateIndex = i; break; }
 }
 if (!state) return null;
 
-// City is token(s) right before state (at least 1 word)
-const cityTokens = [];
+// City is token right before state (1 word city assumption here)
 if (stateIndex - 1 < 0) return null;
-cityTokens.unshift(tokens[stateIndex - 1]);
+const city = tokens[stateIndex - 1];
 
 // Street is everything before city
-const streetTokens = tokens.slice(0, stateIndex - 1);
-const street = streetTokens.join(' ').trim();
-const city = cityTokens.join(' ').trim();
+const street = tokens.slice(0, stateIndex - 1).join(' ').trim();
+if (!street || !city) return null;
 
-if (!street || !city || !state) return null;
 return { street, city, state, zip5, zip4 };
 }
+
 async function verifyAddressWithUSPS(rawAddress) {
 const userId = process.env.USPS_USER_ID;
+
+const raw = String(rawAddress || '').trim();
+
+// Always build a clean "enteredLine" so your popup can show it
+const parsedForEntered = parseUSAddress(raw);
+const enteredLine = parsedForEntered
+? formatAddressLine(parsedForEntered.street, parsedForEntered.city, parsedForEntered.state, parsedForEntered.zip5, parsedForEntered.zip4)
+: raw;
+
 if (!userId) {
-return { ok:false, found:false, showBox:true, message:'Missing USPS_USER_ID', enteredLine: rawAddress || '' };
-}
-console.error('❌ USPS_USER_ID missing');
-return [];
-{
-// If USPS fails → return empty array
-try {
-// your USPS fetch here
-return suggestionsArray; // MUST be []
-} catch (e) {
-console.error('USPS API ERROR:', e.message);
-return [];
-}
+console.error('❌ USPS_USER_ID missing (Render env var not set)');
+return {
+ok: false,
+found: false,
+showBox: true,
+message: 'Missing USPS_USER_ID on the server. (Set it in Render → Environment and redeploy)',
+enteredLine,
+recommendedLine: ''
+};
 }
 
-const parsed = parseUSAddress(rawAddress);
+const parsed = parseUSAddress(raw);
 if (!parsed) {
-// Still show popup so user can correct it (instead of silent pass)
 return {
-ok:true,
-found:false,
-showBox:true,
-message:'Please enter address like: "Street, City, ST ZIP".',
-enteredLine: String(rawAddress || '').trim()
+ok: true,
+found: false,
+showBox: true,
+message: 'Please enter address like: "Street, City, ST ZIP".',
+enteredLine: raw,
+recommendedLine: ''
 };
 }
 
 const { street, city, state, zip5 } = parsed;
 
-// Build entered line for popup
-const enteredLine = formatAddressLine(street, city, state, zip5, '');
-
-// USPS Verify (AddressValidate)
 const xml = `
 <AddressValidateRequest USERID="${escapeXml(userId)}">
 <Revision>1</Revision>
@@ -335,8 +334,7 @@ const xml = `
 <Zip5>${escapeXml(zip5 || '')}</Zip5>
 <Zip4></Zip4>
 </Address>
-</AddressValidateRequest>
-`.trim();
+</AddressValidateRequest>`.trim();
 
 const url = `https://secure.shippingapis.com/ShippingAPI.dll?API=Verify&XML=${encodeURIComponent(xml)}`;
 
@@ -344,10 +342,20 @@ try {
 const resp = await fetch(url);
 const text = await resp.text();
 
-// If USPS returns <Error>, show popup but with "no match"
+// USPS error response
 if (text.includes('<Error>')) {
-const msg = (text.match(/<Description>([\s\S]*?)<\/Description>/i)?.[1] || 'USPS could not verify this address.').trim();
-return { ok:true, found:false, showBox:true, message: msg, enteredLine, recommendedLine:'' };
+const msg =
+(text.match(/<Description>([\s\S]*?)<\/Description>/i)?.[1] || 'USPS could not verify this address.')
+.trim();
+
+return {
+ok: true,
+found: false,
+showBox: true,
+message: msg,
+enteredLine,
+recommendedLine: ''
+};
 }
 
 const pick = (tag) => {
@@ -366,33 +374,46 @@ const recommendedLine = found
 ? formatAddressLine(addr2, cityR, stateR, zip5R, zip4R)
 : '';
 
-// show popup if:
-// - not found (so user can fix/continue)
-// - OR found but different than entered
+// Show popup if not found OR different than entered
 const showBox = !found ? true : (normalizeAddr(enteredLine) !== normalizeAddr(recommendedLine));
 
 return {
-ok:true,
+ok: true,
 found,
 showBox,
 message: found ? '' : 'No USPS match found. You can edit the address or continue.',
 enteredLine,
 recommendedLine
 };
+
 } catch (e) {
-return { ok:false, found:false, showBox:true, message: e.message || 'USPS verify failed', enteredLine, recommendedLine:'' };
+console.error('USPS API ERROR:', e && e.message ? e.message : e);
+return {
+ok: false,
+found: false,
+showBox: true,
+message: (e && e.message) || 'USPS verify failed',
+enteredLine,
+recommendedLine: ''
+};
 }
 }
 
-/* ---------------- USPS VERIFY ROUTE (POPUP-READY) ----------------
+/* ---------------- USPS VERIFY ROUTE (POPUP-READY) ---------------- */
 app.post('/api/usps-verify', express.json(), async (req, res) => {
 try {
 const entered = String(req.body?.address || '').trim();
-if (!entered) return res.status(400).json({ ok:false, found:false, showBox:true, message:'Missing address', enteredLine:'', recommendedLine:'' });
+if (!entered) {
+return res.status(400).json({
+ok: false, found: false, showBox: true,
+message: 'Missing address',
+enteredLine: '',
+recommendedLine: ''
+});
+}
 
 const result = await verifyAddressWithUSPS(entered);
 
-// Ensure the front-end always gets the fields it expects
 return res.json({
 ok: !!result.ok,
 found: !!result.found,
@@ -401,11 +422,16 @@ enteredLine: result.enteredLine || entered,
 recommendedLine: result.recommendedLine || '',
 message: result.message || ''
 });
+
 } catch (err) {
-return res.json({ ok:false, found:false, showBox:true, message: err.message || 'Server error', enteredLine:'', recommendedLine:'' });
+return res.json({
+ok: false, found: false, showBox: true,
+message: err && err.message ? err.message : 'Server error',
+enteredLine: String(req.body?.address || ''),
+recommendedLine: ''
+});
 }
 });
-
 /* ----------------------------- CORS (unified) ----------------------------- */
 const ALLOWED_HOSTS = new Set([
 'www.taxlakay.com',
