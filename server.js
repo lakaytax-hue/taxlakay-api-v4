@@ -379,8 +379,73 @@ const { street: streetRaw, city, state, zip5 } = parsed;
 const split = splitStreetAndUnit(streetRaw);
 const street = split.street;
 const unit = split.unit;
+
+ async function callUspsOnce({ street, city, state, zip5 }) {
+const xml = `
+<AddressValidateRequest USERID="${escapeXml(userId)}">
+<Revision>1</Revision>
+<Address ID="0">
+<Address1></Address1>
+<Address2>${escapeXml(street)}</Address2>
+<City>${escapeXml(city || "")}</City>
+<State>${escapeXml(state || "")}</State>
+<Zip5>${escapeXml(zip5 || "")}</Zip5>
+<Zip4></Zip4>
+</Address>
+</AddressValidateRequest>`.trim();
+
+const url = `https://secure.shippingapis.com/ShippingAPI.dll?API=Verify&XML=${encodeURIComponent(xml)}`;
+const resp = await fetch(url);
+const text = await resp.text();
+
+if (text.includes("<Error>")) return { ok: true, found: false, text };
+
+const pick = (tag) => (text.match(new RegExp(`<${tag}>([\\s\\S]*?)<\\/${tag}>`, "i"))?.[1] || "").trim();
+
+const addr2 = pick("Address2");
+const cityR = pick("City");
+const stateR = pick("State");
+const zip5R = pick("Zip5");
+const zip4R = pick("Zip4");
+
+const found = !!(addr2 && cityR && stateR && zip5R);
+return {
+ok: true,
+found,
+recommendedLine: found ? formatAddressLine(addr2, cityR, stateR, zip5R, zip4R) : "",
+text
+};
+}
+
+ // Try 1: full address
+let attempt = await callUspsOnce({ street, city, state, zip5 });
+
+// Try 2: ZIP-only (ignore city/state)
+if (!attempt.found && zip5) {
+attempt = await callUspsOnce({ street, city: "", state: "", zip5 });
+}
+
+// Try 3: remove unit (APT / SUITE / #)
+if (!attempt.found) {
+const streetNoUnit = street
+.replace(/\b(APT|UNIT|STE|SUITE|#)\b.*$/i, "")
+.trim();
+
+if (streetNoUnit && streetNoUnit !== street) {
+attempt = await callUspsOnce({ street: streetNoUnit, city, state, zip5 });
+
+if (!attempt.found && zip5) {
+attempt = await callUspsOnce({
+street: streetNoUnit,
+city: "",
+state: "",
+zip5
+});
+}
+}
+}
  
-// ✅ PASS A: If ZIP exists, validate using STREET + ZIP only (ignore city/state parsing)
+ // ✅ PASS A: If ZIP exists, validate using STREET + ZIP only (ignore city/state parsing)
 let r = null;
 if (zip5) {
 r = await callUsps({ street, city: '', state: '', zip5 });
