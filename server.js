@@ -7,6 +7,18 @@ const nodemailer = require('nodemailer');
 const PDFDocument = require('pdfkit');
 const { google } = require('googleapis');
 const app = express();
+const cors = require("cors");
+
+app.use(cors({
+origin: "*",
+methods: ["GET", "POST", "OPTIONS"],
+allowedHeaders: ["Content-Type", "Accept", "Authorization"]
+}));
+
+app.options("*", cors());
+
+// also make sure JSON parsing is enabled globally
+app.use(express.json({ limit: "2mb" }));
 
 /* --------------------------- GOOGLE OAUTH SETUP --------------------------- */
 
@@ -409,12 +421,36 @@ try {
 const { street: streetRaw, city, state, zip5 } = parsed;
 const { street, unit } = splitStreetAndUnit(streetRaw);
 
-// Try 1: full
-let r = await callUspsVerify(userId, { street, unit, city, state, zip5 });
+// Try 1: ZIP-only first (USPS prefers ZIP match)
+let r;
 
-// Try 2: ZIP-only
-if (!r.found && zip5) {
-r = await callUspsVerify(userId, { street, unit, city: "", state: "", zip5 });
+if (zip5) {
+r = await callUspsVerify(userId, {
+street,
+unit,
+city: "",
+state: "",
+zip5
+});
+} else {
+r = await callUspsVerify(userId, {
+street,
+unit,
+city,
+state,
+zip5
+});
+}
+
+// Try 2: Full address fallback
+if (!r.found) {
+r = await callUspsVerify(userId, {
+street,
+unit,
+city,
+state,
+zip5
+});
 }
 
 // Try 3: remove unit
