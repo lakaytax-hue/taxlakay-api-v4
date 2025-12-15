@@ -7,18 +7,6 @@ const nodemailer = require('nodemailer');
 const PDFDocument = require('pdfkit');
 const { google } = require('googleapis');
 const app = express();
-const cors = require("cors");
-
-app.use(cors({
-origin: "*",
-methods: ["GET", "POST", "OPTIONS"],
-allowedHeaders: ["Content-Type", "Accept", "Authorization"]
-}));
-
-app.options("*", cors());
-
-// also make sure JSON parsing is enabled globally
-app.use(express.json({ limit: "2mb" }));
 
 /* --------------------------- GOOGLE OAUTH SETUP --------------------------- */
 
