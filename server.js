@@ -287,6 +287,23 @@ if (!street || !city) return null;
 return { street, city, state, zip5, zip4 };
 }
 
+function splitStreetAndUnit(streetRaw) {
+const s = String(streetRaw || '').trim();
+
+// common unit keywords
+const re = /\b(APT|UNIT|STE|SUITE|#)\s*([A-Z0-9-]+)\b/i;
+
+const m = s.match(re);
+if (!m) return { street: s, unit: '' };
+
+// everything before the unit keyword = street
+const idx = m.index || 0;
+const street = s.slice(0, idx).trim();
+const unit = s.slice(idx).trim(); // "Apt A" / "Unit 5" / "# 12" etc.
+
+return { street, unit };
+}
+
 async function verifyAddressWithUSPS(rawAddress) {
 const userId = process.env.USPS_USER_ID;
 const raw = String(rawAddress || '').trim();
@@ -321,8 +338,8 @@ const xml = `
 <AddressValidateRequest USERID="${escapeXml(userId)}">
 <Revision>1</Revision>
 <Address ID="0">
-<Address1></Address1>
-<Address2>${escapeXml(street || '')}</Address2>
+<Address1>${escapeXml(unit)}</Address1>
+<Address2>${escapeXml(street)}</Address2>
 <City>${escapeXml(city || '')}</City>
 <State>${escapeXml(state || '')}</State>
 <Zip5>${escapeXml(zip5 || '')}</Zip5>
@@ -358,8 +375,11 @@ return { ok: true, found, recommendedLine, message: '', text };
 }
 
 try {
-const { street, city, state, zip5 } = parsed;
-
+const { street: streetRaw, city, state, zip5 } = parsed;
+const split = splitStreetAndUnit(streetRaw);
+const street = split.street;
+const unit = split.unit;
+ 
 // ✅ PASS A: If ZIP exists, validate using STREET + ZIP only (ignore city/state parsing)
 let r = null;
 if (zip5) {
