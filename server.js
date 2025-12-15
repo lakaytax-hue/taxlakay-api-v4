@@ -418,14 +418,7 @@ return false; // wait for user choice
 
 // No mismatch or no recommended address -> proceed
 return true;
-import cors from "cors";
-app.use(cors({
-origin: ["https://www.taxlakay.com", "https://taxlakay.com"],
-methods: ["GET","POST","OPTIONS"],
-allowedHeaders: ["Content-Type","Accept"]
-}));
-app.options("*", cors());
-app.use(express.json())
+
 /* =========================================================
 ROUTE: POST /api/usps-verify (because index.js uses app.use("/api", uploadRoutes))
 Body: { address: "..." }
