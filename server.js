@@ -9,6 +9,45 @@ const { google } = require('googleapis');
 const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args));
 const app = express();
 
+// ================== GLOBAL MIDDLEWARE (MUST BE FIRST) ==================
+app.use(express.json({ limit: "2mb" }));
+
+const ALLOWED_ORIGINS = new Set([
+"https://www.taxlakay.com",
+"https://taxlakay.com",
+"https://sites.google.com",
+"https://www.sites.google.com",
+]);
+
+function isAllowedOrigin(origin) {
+if (!origin) return true; // allow server-to-server / Render health checks
+try {
+const u = new URL(origin);
+if (u.protocol !== "https:") return false;
+
+if (ALLOWED_ORIGINS.has(origin)) return true;
+if (u.hostname.endsWith(".googleusercontent.com")) return true;
+if (u.hostname === "sites.google.com") return true;
+
+return false;
+} catch {
+return false;
+}
+}
+
+app.use(
+cors({
+origin: (origin, cb) => cb(null, isAllowedOrigin(origin)),
+methods: ["GET", "POST", "OPTIONS"],
+allowedHeaders: ["Content-Type", "Accept"],
+credentials: false,
+})
+);
+
+// 🔴 THIS LINE IS CRITICAL FOR "Failed to fetch"
+app.options("*", cors());
+// ======================================================================
+
 /* --------------------------- GOOGLE OAUTH SETUP --------------------------- */
 
 const oauth2Client = new google.auth.OAuth2(
