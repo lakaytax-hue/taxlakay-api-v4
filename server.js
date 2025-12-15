@@ -422,7 +422,7 @@ recommendedLine: ""
 ROUTE: POST /api/usps-verify (because index.js uses app.use("/api", uploadRoutes))
 Body: { address: "..." }
 ========================================================= */
-router.post("/usps-verify", express.json(), async (req, res) => {
+app.post('/api/usps-verify', express.json(), async (req, res) => {
 try {
 console.log("USPS VERIFY BODY:", req.body);
 
