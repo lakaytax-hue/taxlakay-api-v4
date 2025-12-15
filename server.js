@@ -186,7 +186,10 @@ USPS ADDRESS VALIDATION — POPUP-READY RESPONSE (READY TO PASTE)
 ok, found, showBox, enteredLine, recommendedLine, message
 ========================================================= */
 
-const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args));
+// ✅ Use a unique fetch name to avoid "already declared" errors
+const uspsFetch = globalThis.fetch
+? (...args) => globalThis.fetch(...args)
+: (...args) => import("node-fetch").then(({ default: f }) => f(...args));
 
 const STATE_MAP = {
 AL:'AL', ALABAMA:'AL', AK:'AK', ALASKA:'AK', AZ:'AZ', ARIZONA:'AZ', AR:'AR', ARKANSAS:'AR',
@@ -225,11 +228,10 @@ return String(s || '')
 }
 
 function normalizeRawInput(raw) {
-// IMPORTANT: supports "street<enter>city state zip" from textarea
 return String(raw || '')
 .trim()
 .replace(/\r/g, '')
-.replace(/\n+/g, ', ') // line breaks -> commas
+.replace(/\n+/g, ', ')
 .replace(/\s+/g, ' ')
 .replace(/\s*,\s*/g, ', ')
 .trim();
@@ -242,19 +244,10 @@ const line2 = [city, state, zip].filter(Boolean).join(' ');
 return [line1, line2].filter(Boolean).join('\n').trim();
 }
 
-/**
-* parseUSAddress(raw)
-* Accepts:
-* - "929 Gilmore Ave Apt 2, Lakeland, FL 33801"
-* - "929 Gilmore Ave Apt 2 Lakeland FL 33801"
-* - "929 Gilmore Ave Apt 2\nLakeland FL 33801"
-* ZIP optional
-*/
 function parseUSAddress(raw) {
 const s0 = normalizeRawInput(raw);
 if (!s0) return null;
 
-// pull ZIP at end (optional)
 let zip5 = '';
 let zip4 = '';
 const zipMatch = s0.match(/(\d{5})(?:-(\d{4}))?\s*$/);
@@ -266,7 +259,6 @@ zip4 = zipMatch[2] || '';
 base = s0.replace(/(\d{5})(?:-\d{4})?\s*$/, '').trim();
 }
 
-// If commas exist, prefer: street, city, state
 if (base.includes(',')) {
 const parts = base.split(',').map(x => x.trim()).filter(Boolean);
 if (parts.length >= 3) {
@@ -277,7 +269,6 @@ if (street && city && state) return { street, city, state, zip5, zip4 };
 }
 }
 
-// No commas: find state token near the end
 const tokens = base.split(' ').filter(Boolean);
 if (tokens.length < 3) return null;
 
@@ -289,11 +280,9 @@ if (st) { state = st; stateIndex = i; break; }
 }
 if (!state) return null;
 
-// City is token right before state (simple city assumption)
 if (stateIndex - 1 < 0) return null;
 const city = tokens[stateIndex - 1];
 
-// Street is everything before city
 const street = tokens.slice(0, stateIndex - 1).join(' ').trim();
 if (!street || !city) return null;
 
@@ -302,7 +291,8 @@ return { street, city, state, zip5, zip4 };
 
 function splitStreetAndUnit(streetRaw) {
 const s = String(streetRaw || '').trim();
-const re = /\b(APT|UNIT|STE|SUITE|#)\s*([A-Z0-9-]+)\b/i;
+// Enhanced regex to better handle unit patterns
+const re = /\b(APT|APARTMENT|UNIT|STE|SUITE|#)\s*([A-Z0-9-\s]+)\b/i;
 const m = s.match(re);
 if (!m) return { street: s, unit: '' };
 const idx = m.index || 0;
@@ -311,13 +301,43 @@ const unit = s.slice(idx).trim();
 return { street, unit };
 }
 
+function normalizeStreetForUSPS(street) {
+// Common street abbreviation corrections
+const abbreviations = {
+'bvd': 'BLVD',
+'blvd': 'BLVD',
+'rd': 'RD',
+'st': 'ST',
+'ave': 'AVE',
+'dr': 'DR',
+'ln': 'LN',
+'ct': 'CT',
+'pl': 'PL',
+'cir': 'CIR',
+'pkwy': 'PKWY',
+'hwy': 'HWY'
+};
+
+return street
+.toUpperCase()
+.split(' ')
+.map(word => {
+const lowerWord = word.toLowerCase();
+return abbreviations[lowerWord] || word;
+})
+.join(' ');
+}
+
 async function callUspsVerify(userId, { street, unit, city, state, zip5 }) {
+// Normalize street abbreviations before sending to USPS
+const normalizedStreet = normalizeStreetForUSPS(street || '');
+
 const xml = `
 <AddressValidateRequest USERID="${escapeXml(userId)}">
 <Revision>1</Revision>
 <Address ID="0">
 <Address1>${escapeXml(unit || '')}</Address1>
-<Address2>${escapeXml(street || '')}</Address2>
+<Address2>${escapeXml(normalizedStreet || '')}</Address2>
 <City>${escapeXml(city || '')}</City>
 <State>${escapeXml(state || '')}</State>
 <Zip5>${escapeXml(zip5 || '')}</Zip5>
@@ -326,7 +346,7 @@ const xml = `
 </AddressValidateRequest>`.trim();
 
 const url = `https://secure.shippingapis.com/ShippingAPI.dll?API=Verify&XML=${encodeURIComponent(xml)}`;
-const resp = await fetch(url);
+const resp = await uspsFetch(url);
 const text = await resp.text();
 
 if (text.includes('<Error>')) {
@@ -340,13 +360,17 @@ return m ? String(m[1] || '').trim() : '';
 };
 
 const addr2 = pick('Address2');
+const addr1 = pick('Address1'); // Unit/apt from USPS response
 const cityR = pick('City');
 const stateR = pick('State');
 const zip5R = pick('Zip5');
 const zip4R = pick('Zip4');
 
-const found = !!(addr2 && cityR && stateR && zip5R);
-const recommendedLine = found ? formatAddressLine(addr2, cityR, stateR, zip5R, zip4R) : '';
+// Combine street and unit if USPS returns them separately
+const fullStreet = [addr2, addr1].filter(Boolean).join(' ').trim();
+
+const found = !!(fullStreet && cityR && stateR && zip5R);
+const recommendedLine = found ? formatAddressLine(fullStreet, cityR, stateR, zip5R, zip4R) : '';
 
 return { ok: true, found, recommendedLine, message: '', text };
 }
@@ -385,30 +409,30 @@ const split = splitStreetAndUnit(streetRaw);
 const street = split.street;
 const unit = split.unit;
 
-// PASS 1: Full (street + unit + city/state + zip if any)
+// First try with the unit in Address1
 let r = await callUspsVerify(userId, { street, unit, city, state, zip5 });
 
-// PASS 2: ZIP-only (street + unit + zip) if ZIP exists
+// If not found, try without city/state (ZIP-only lookup)
 if (!r.found && zip5) {
 r = await callUspsVerify(userId, { street, unit, city: '', state: '', zip5 });
 }
 
-// PASS 3: remove unit and try again
+// If still not found, try with the unit concatenated to the street
 if (!r.found) {
-const streetNoUnit = String(streetRaw || '')
-.replace(/\b(APT|UNIT|STE|SUITE|#)\b.*$/i, '')
-.trim();
-
-if (streetNoUnit && streetNoUnit !== streetRaw) {
-const split2 = splitStreetAndUnit(streetNoUnit);
-const street2 = split2.street;
-const unit2 = ''; // removed
-
-r = await callUspsVerify(userId, { street: street2, unit: unit2, city, state, zip5 });
+const streetWithUnit = [street, unit].filter(Boolean).join(' ');
+r = await callUspsVerify(userId, { street: streetWithUnit, unit: '', city, state, zip5 });
 
 if (!r.found && zip5) {
-r = await callUspsVerify(userId, { street: street2, unit: unit2, city: '', state: '', zip5 });
+r = await callUspsVerify(userId, { street: streetWithUnit, unit: '', city: '', state: '', zip5 });
 }
+}
+
+// If still not found, try without the unit completely
+if (!r.found) {
+r = await callUspsVerify(userId, { street, unit: '', city, state, zip5 });
+
+if (!r.found && zip5) {
+r = await callUspsVerify(userId, { street, unit: '', city: '', state: '', zip5 });
 }
 }
 
@@ -426,6 +450,7 @@ recommendedLine
 };
 
 } catch (e) {
+console.error('USPS verification error:', e);
 return {
 ok: false, found: false, showBox: true,
 message: (e && e.message) || 'USPS verify failed',
@@ -435,9 +460,7 @@ recommendedLine: ''
 }
 }
 
-/* =========================================================
-ROUTE (READY TO PASTE)
-========================================================= */
+// Your Express route handler
 app.post('/api/usps-verify', express.json(), async (req, res) => {
 try {
 const entered = String(req.body?.address || '').trim();
@@ -455,7 +478,6 @@ message: 'Address is required'
 
 const result = await verifyAddressWithUSPS(entered);
 
-// HARD GUARANTEE: always send expected fields
 return res.json({
 ok: !!result.ok,
 found: !!result.found,
