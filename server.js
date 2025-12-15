@@ -336,131 +336,146 @@ const recommendedLine = found ? formatAddressLine(addr2, cityR, stateR, zip5R, z
 return { ok: true, found, recommendedLine, message: "", text };
 }
 
-async function verifyAddressWithUSPS(rawAddress) {
-const userId = process.env.USPS_USER_ID;
-const raw = normalizeRawInput(rawAddress);
+async function verifyUSPSMaybeShowModal(){
+const addrVal = (addrInput ? addrInput.value.trim() : "");
+if (!addrVal) { showError("Please enter your current address."); return false; }
 
-const parsedForEntered = parseUSAddress(raw) || null;
-const enteredLine = parsedForEntered
-? formatAddressLine(parsedForEntered.street, parsedForEntered.city, parsedForEntered.state, parsedForEntered.zip5, parsedForEntered.zip4)
-: String(rawAddress || "").trim();
+if (fullAddrInput) fullAddrInput.value = addrVal;
 
-if (!userId) {
-return {
-ok: false, found: false, showBox: true,
-message: "Missing USPS_USER_ID on the server (Render → Environment).",
-enteredLine,
-recommendedLine: ""
-};
-}
+const USPS_VERIFY_URL = "https://taxlakay-api-v4.onrender.com/api/usps-verify";
 
-const parsed = parseUSAddress(raw);
-if (!parsed) {
-return {
-ok: true, found: false, showBox: true,
-message: 'Enter like: "Street, City, ST ZIP" (ZIP helps).',
-enteredLine: String(rawAddress || "").trim(),
-recommendedLine: ""
-};
-}
+let resp, text, data;
 
 try {
-const { street: streetRaw, city, state, zip5 } = parsed;
-const split = splitStreetAndUnit(streetRaw);
-const street = split.street;
-const unit = split.unit;
-
-console.log("USPS PARSED:", { street, unit, city, state, zip5 });
-
-// Try 1: full
-let r = await callUspsVerify(userId, { street, unit, city, state, zip5 });
-
-// Try 2: ZIP-only
-if (!r.found && zip5) {
-r = await callUspsVerify(userId, { street, unit, city: "", state: "", zip5 });
-}
-
-// Try 3: remove unit and try again
-if (!r.found) {
-const streetNoUnit = String(streetRaw || "")
-.replace(/\b(APT|UNIT|STE|SUITE|#)\b.*$/i, "")
-.trim();
-
-if (streetNoUnit && streetNoUnit !== streetRaw) {
-const s2 = splitStreetAndUnit(streetNoUnit);
-r = await callUspsVerify(userId, { street: s2.street, unit: "", city, state, zip5 });
-if (!r.found && zip5) {
-r = await callUspsVerify(userId, { street: s2.street, unit: "", city: "", state: "", zip5 });
-}
-}
-}
-
-const found = !!r.found;
-const recommendedLine = r.recommendedLine || "";
-const showBox = !found ? true : (normalizeAddr(enteredLine) !== normalizeAddr(recommendedLine));
-
-return {
-ok: true,
-found,
-showBox,
-message: found ? "" : (r.message || "No USPS match found. Please edit the address."),
-enteredLine,
-recommendedLine
-};
-
+resp = await withTimeout(fetch(USPS_VERIFY_URL, {
+method: "POST",
+headers: {
+"Content-Type": "application/json",
+"Accept": "application/json"
+},
+body: JSON.stringify({ address: addrVal })
+}), 12000);
 } catch (e) {
-return {
-ok: false, found: false, showBox: true,
-message: (e && e.message) || "USPS verify failed",
-enteredLine,
-recommendedLine: ""
-};
-}
+// Network/CORS/timeout
+lastEntered = addrVal;
+lastRecommended = "";
+showModal(
+addrVal,
+"",
+"USPS verification is temporarily unavailable. Select **Address Entered** and click OK to continue."
+);
+return false;
 }
 
+// If server returned an error code, read the text and show a friendly message
+if (!resp.ok) {
+try { text = await resp.text(); } catch (_) { text = ""; }
+lastEntered = addrVal;
+lastRecommended = "";
+showModal(
+addrVal,
+"",
+`USPS check failed (${resp.status}). Select **Address Entered** and click OK to continue.`
+);
+return false;
+}
+
+// Parse JSON safely
+try {
+data = await resp.json();
+} catch (_) {
+lastEntered = addrVal;
+lastRecommended = "";
+showModal(
+addrVal,
+"",
+"USPS returned an unexpected response. Select **Address Entered** and click OK to continue."
+);
+return false;
+}
+
+const status = (data && data.status) || "";
+const recommended =
+(data && (data.recommended || data.recommendedLine || data.suggestedAddress)) || "";
+const entered =
+(data && (data.entered || data.enteredLine)) || addrVal;
+
+const needs =
+(status === "needs_confirmation") ||
+(data && data.type === "address_mismatch");
+
+lastEntered = String(entered || addrVal);
+lastRecommended = String(recommended || "");
+
+if (needs && lastRecommended) {
+showModal(
+lastEntered,
+lastRecommended,
+data.message || "USPS found a more official version of your address."
+);
+return false; // wait for user choice
+}
+
+// No mismatch or no recommended address -> proceed
+return true;
+import cors from "cors";
+app.use(cors({
+origin: ["https://www.taxlakay.com", "https://taxlakay.com"],
+methods: ["GET","POST","OPTIONS"],
+allowedHeaders: ["Content-Type","Accept"]
+}));
+app.options("*", cors());
+app.use(express.json())
 /* =========================================================
 ROUTE: POST /api/usps-verify (because index.js uses app.use("/api", uploadRoutes))
 Body: { address: "..." }
 ========================================================= */
-app.post('/api/usps-verify', express.json(), async (req, res) => {
+app.post("/api/usps-verify", async (req, res) => {
 try {
-const entered = String(req.body?.address || '').trim();
+const entered = String(req.body?.address || "").trim();
 
 if (!entered) {
-return res.json({
+return res.status(400).json({
 ok: false,
 found: false,
 showBox: true,
-enteredLine: '',
-recommendedLine: '',
-message: 'Address is required'
+enteredLine: "",
+recommendedLine: "",
+message: "Address is required"
 });
 }
 
-const result = await verifyAddressWithUSPS(entered);
+const withTimeout = (p, ms = 10000) =>
+Promise.race([
+p,
+new Promise((_, rej) => setTimeout(() => rej(new Error("USPS timeout")), ms))
+]);
 
-// ALWAYS show the modal so customer confirms
+const result = await withTimeout(verifyAddressWithUSPS(entered), 10000).catch(() => ({
+found: false,
+enteredLine: entered,
+recommendedLine: ""
+}));
+
 return res.json({
 ok: true,
 found: !!result.found,
 showBox: true,
 enteredLine: result.enteredLine || entered,
-recommendedLine: result.recommendedLine || '',
-message:
-result.recommendedLine
-? 'USPS found a standardized version of your address.'
-: 'USPS could not standardize this address. Please confirm it is correct.'
+recommendedLine: result.recommendedLine || "",
+message: result.recommendedLine
+? "USPS found a standardized version of your address."
+: "USPS could not standardize this address. Please confirm it is correct."
 });
-
 } catch (err) {
-console.error('USPS VERIFY ERROR:', err);
+console.error("USPS VERIFY ERROR:", err);
 return res.json({
 ok: true,
 found: false,
 showBox: true,
-enteredLine: String(req.body?.address || ''),
-recommendedLine: '',
-message: 'USPS verification unavailable. Please confirm your address.'
+enteredLine: String(req.body?.address || ""),
+recommendedLine: "",
+message: "USPS verification unavailable. Please confirm your address."
 });
 }
 });
