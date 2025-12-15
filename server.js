@@ -424,40 +424,43 @@ Body: { address: "..." }
 ========================================================= */
 app.post('/api/usps-verify', express.json(), async (req, res) => {
 try {
-console.log("USPS VERIFY BODY:", req.body);
+const entered = String(req.body?.address || '').trim();
 
-const entered = String(req.body?.address || "").trim();
 if (!entered) {
 return res.json({
 ok: false,
 found: false,
 showBox: true,
-enteredLine: "",
-recommendedLine: "",
-message: "Address is required"
+enteredLine: '',
+recommendedLine: '',
+message: 'Address is required'
 });
 }
 
 const result = await verifyAddressWithUSPS(entered);
 
+// ALWAYS show the modal so customer confirms
 return res.json({
-ok: !!result.ok,
+ok: true,
 found: !!result.found,
-showBox: result.showBox !== false,
+showBox: true,
 enteredLine: result.enteredLine || entered,
-recommendedLine: result.recommendedLine || "",
-message: result.message || ""
+recommendedLine: result.recommendedLine || '',
+message:
+result.recommendedLine
+? 'USPS found a standardized version of your address.'
+: 'USPS could not standardize this address. Please confirm it is correct.'
 });
 
 } catch (err) {
-console.error("USPS VERIFY ERROR:", err);
+console.error('USPS VERIFY ERROR:', err);
 return res.json({
-ok: false,
+ok: true,
 found: false,
 showBox: true,
-enteredLine: String(req.body?.address || ""),
-recommendedLine: "",
-message: "USPS verification failed."
+enteredLine: String(req.body?.address || ''),
+recommendedLine: '',
+message: 'USPS verification unavailable. Please confirm your address.'
 });
 }
 });
