@@ -189,24 +189,6 @@ USPS ADDRESS VALIDATION — POPUP-READY (SERVER)
 ok, found, showBox, enteredLine, recommendedLine, message, debug
 ========================================================= */
 
-/* ------------------------ REQUIRED: middleware ------------------------ */
-/* Put this ONCE near the top of server.js (before routes) */
-const cors = require("cors");
-
-// If you already have app = express(); above, do NOT duplicate it.
-// Ensure these are before any routes:
-app.use(
-cors({
-origin: "*",
-methods: ["GET", "POST", "OPTIONS"],
-allowedHeaders: ["Content-Type", "Accept", "Authorization"],
-})
-);
-app.options("*", cors());
-app.use(express.json({ limit: "2mb" }));
-
-// quick test endpoint (open in browser)
-app.get("/api/ping", (req, res) => res.json({ ok: true, time: Date.now() }));
 
 /* ------------------------ USPS helper functions ------------------------ */
 
