@@ -178,7 +178,7 @@ sanitizeName,
 };
 
 /* =========================================================
-USPS ADDRESS VALIDATION — POPUP-READY RESPONSE (READY TO PASTE)
+USPS ADDRESS VALIDATION — POPUP-READY RESPONSE (ROUTER VERSION)
 - Handles commas OR line breaks OR no commas
 - ZIP optional (better if provided)
 - Tries multiple USPS passes (full, ZIP-only, no unit)
@@ -186,75 +186,78 @@ USPS ADDRESS VALIDATION — POPUP-READY RESPONSE (READY TO PASTE)
 ok, found, showBox, enteredLine, recommendedLine, message
 ========================================================= */
 
+const fetch = (...args) => import("node-fetch").then(({ default: fetch }) => fetch(...args));
+
 const STATE_MAP = {
-AL:'AL', ALABAMA:'AL', AK:'AK', ALASKA:'AK', AZ:'AZ', ARIZONA:'AZ', AR:'AR', ARKANSAS:'AR',
-CA:'CA', CALIFORNIA:'CA', CO:'CO', COLORADO:'CO', CT:'CT', CONNECTICUT:'CT', DE:'DE', DELAWARE:'DE',
-DC:'DC', DISTRICTOFCOLUMBIA:'DC',
-FL:'FL', FLORIDA:'FL', GA:'GA', GEORGIA:'GA', HI:'HI', HAWAII:'HI', ID:'ID', IDAHO:'ID',
-IL:'IL', ILLINOIS:'IL', IN:'IN', INDIANA:'IN', IA:'IA', IOWA:'IA', KS:'KS', KANSAS:'KS',
-KY:'KY', KENTUCKY:'KY', LA:'LA', LOUISIANA:'LA', ME:'ME', MAINE:'ME', MD:'MD', MARYLAND:'MD',
-MA:'MA', MASSACHUSETTS:'MA', MI:'MI', MICHIGAN:'MI', MN:'MN', MINNESOTA:'MN', MS:'MS', MISSISSIPPI:'MS',
-MO:'MO', MISSOURI:'MO', MT:'MT', MONTANA:'MT', NE:'NE', NEBRASKA:'NE', NV:'NV', NEVADA:'NV',
-NH:'NH', NEWHAMPSHIRE:'NH', NJ:'NJ', NEWJERSEY:'NJ', NM:'NM', NEWMEXICO:'NM', NY:'NY', NEWYORK:'NY',
-NC:'NC', NORTHCAROLINA:'NC', ND:'ND', NORTHDAKOTA:'ND', OH:'OH', OHIO:'OH', OK:'OK', OKLAHOMA:'OK',
-OR:'OR', OREGON:'OR', PA:'PA', PENNSYLVANIA:'PA', RI:'RI', RHODEISLAND:'RI', SC:'SC', SOUTHCAROLINA:'SC',
-SD:'SD', SOUTHDAKOTA:'SD', TN:'TN', TENNESSEE:'TN', TX:'TX', TEXAS:'TX', UT:'UT', UTAH:'UT',
-VT:'VT', VERMONT:'VT', VA:'VA', VIRGINIA:'VA', WA:'WA', WASHINGTON:'WA', WV:'WV', WESTVIRGINIA:'WV',
-WI:'WI', WISCONSIN:'WI', WY:'WY', WYOMING:'WY'
+AL:"AL", ALABAMA:"AL", AK:"AK", ALASKA:"AK", AZ:"AZ", ARIZONA:"AZ", AR:"AR", ARKANSAS:"AR",
+CA:"CA", CALIFORNIA:"CA", CO:"CO", COLORADO:"CO", CT:"CT", CONNECTICUT:"CT", DE:"DE", DELAWARE:"DE",
+DC:"DC", DISTRICTOFCOLUMBIA:"DC",
+FL:"FL", FLORIDA:"FL", GA:"GA", GEORGIA:"GA", HI:"HI", HAWAII:"HI", ID:"ID", IDAHO:"ID",
+IL:"IL", ILLINOIS:"IL", IN:"IN", INDIANA:"IN", IA:"IA", IOWA:"IA", KS:"KS", KANSAS:"KS",
+KY:"KY", KENTUCKY:"KY", LA:"LA", LOUISIANA:"LA", ME:"ME", MAINE:"ME", MD:"MD", MARYLAND:"MD",
+MA:"MA", MASSACHUSETTS:"MA", MI:"MI", MICHIGAN:"MI", MN:"MN", MINNESOTA:"MN", MS:"MS", MISSISSIPPI:"MS",
+MO:"MO", MISSOURI:"MO", MT:"MT", MONTANA:"MT", NE:"NE", NEBRASKA:"NE", NV:"NV", NEVADA:"NV",
+NH:"NH", NEWHAMPSHIRE:"NH", NJ:"NJ", NEWJERSEY:"NJ", NM:"NM", NEWMEXICO:"NM", NY:"NY", NEWYORK:"NY",
+NC:"NC", NORTHCAROLINA:"NC", ND:"ND", NORTHDAKOTA:"ND", OH:"OH", OHIO:"OH", OK:"OK", OKLAHOMA:"OK",
+OR:"OR", OREGON:"OR", PA:"PA", PENNSYLVANIA:"PA", RI:"RI", RHODEISLAND:"RI", SC:"SC", SOUTHCAROLINA:"SC",
+SD:"SD", SOUTHDAKOTA:"SD", TN:"TN", TENNESSEE:"TN", TX:"TX", TEXAS:"TX", UT:"UT", UTAH:"UT",
+VT:"VT", VERMONT:"VT", VA:"VA", VIRGINIA:"VA", WA:"WA", WASHINGTON:"WA", WV:"WV", WESTVIRGINIA:"WV",
+WI:"WI", WISCONSIN:"WI", WY:"WY", WYOMING:"WY"
 };
 
 function normStateToken(token) {
-const t = String(token || '').toUpperCase().replace(/[^A-Z]/g, '');
-return STATE_MAP[t] || '';
+const t = String(token || "").toUpperCase().replace(/[^A-Z]/g, "");
+return STATE_MAP[t] || "";
 }
 
 function escapeXml(s) {
-return String(s || '')
-.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-.replace(/"/g, '&quot;').replace(/'/g, '&apos;');
+return String(s || "")
+.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+.replace(/"/g, "&quot;").replace(/'/g, "&apos;");
 }
 
 function normalizeAddr(s) {
-return String(s || '')
+return String(s || "")
 .toUpperCase()
-.replace(/[.,#]/g, ' ')
-.replace(/\s+/g, ' ')
+.replace(/[.,#]/g, " ")
+.replace(/\s+/g, " ")
+.trim();
+}
+
+function normalizeRawInput(raw) {
+return String(raw || "")
+.trim()
+.replace(/\r/g, "")
+.replace(/\n+/g, ", ")
+.replace(/\s+/g, " ")
+.replace(/\s*,\s*/g, ", ")
 .trim();
 }
 
 function formatAddressLine(street, city, state, zip5, zip4) {
-const zip = [zip5, zip4].filter(Boolean).join('-');
-const line1 = street || '';
-const line2 = [city, state, zip].filter(Boolean).join(' ');
-return [line1, line2].filter(Boolean).join('\n').trim();
+const zip = [zip5, zip4].filter(Boolean).join("-");
+const line1 = street || "";
+const line2 = [city, state, zip].filter(Boolean).join(" ");
+return [line1, line2].filter(Boolean).join("\n").trim();
 }
 
-/**
-* parseUSAddress(raw)
-* Accepts:
-* - "929 Gilmore Ave Apt 2, Lakeland, FL 33801"
-* - "929 Gilmore Ave Apt 2 Lakeland FL 33801"
-* ZIP optional
-*/
 function parseUSAddress(raw) {
-const s = String(raw || '').trim().replace(/\s+/g, ' ');
-if (!s) return null;
+const s0 = normalizeRawInput(raw);
+if (!s0) return null;
 
-// Try ZIP at end (optional)
-let zip5 = '';
-let zip4 = '';
-const zipMatch = s.match(/(\d{5})(?:-(\d{4}))?\s*$/);
-let base = s;
+let zip5 = "";
+let zip4 = "";
+const zipMatch = s0.match(/(\d{5})(?:-(\d{4}))?\s*$/);
+let base = s0;
 
 if (zipMatch) {
-zip5 = zipMatch[1] || '';
-zip4 = zipMatch[2] || '';
-base = s.replace(/(\d{5})(?:-\d{4})?\s*$/, '').trim();
+zip5 = zipMatch[1] || "";
+zip4 = zipMatch[2] || "";
+base = s0.replace(/(\d{5})(?:-\d{4})?\s*$/, "").trim();
 }
 
-// If commas exist, prefer: street, city, state
-if (base.includes(',')) {
-const parts = base.split(',').map(x => x.trim()).filter(Boolean);
+if (base.includes(",")) {
+const parts = base.split(",").map(x => x.trim()).filter(Boolean);
 if (parts.length >= 3) {
 const street = parts[0];
 const city = parts[1];
@@ -263,152 +266,176 @@ if (street && city && state) return { street, city, state, zip5, zip4 };
 }
 }
 
-// No commas: find state token near the end
-const tokens = base.split(' ').filter(Boolean);
+const tokens = base.split(" ").filter(Boolean);
 if (tokens.length < 3) return null;
 
 let stateIndex = -1;
-let state = '';
+let state = "";
 for (let i = tokens.length - 1; i >= Math.max(0, tokens.length - 4); i--) {
 const st = normStateToken(tokens[i]);
 if (st) { state = st; stateIndex = i; break; }
 }
 if (!state) return null;
 
-// City is token right before state (1 word city assumption here)
 if (stateIndex - 1 < 0) return null;
 const city = tokens[stateIndex - 1];
-
-// Street is everything before city
-const street = tokens.slice(0, stateIndex - 1).join(' ').trim();
+const street = tokens.slice(0, stateIndex - 1).join(" ").trim();
 if (!street || !city) return null;
 
 return { street, city, state, zip5, zip4 };
 }
 
+function splitStreetAndUnit(streetRaw) {
+const s = String(streetRaw || "").trim();
+const re = /\b(APT|UNIT|STE|SUITE|#)\s*([A-Z0-9-]+)\b/i;
+const m = s.match(re);
+if (!m) return { street: s, unit: "" };
+const idx = m.index || 0;
+const street = s.slice(0, idx).trim();
+const unit = s.slice(idx).trim();
+return { street, unit };
+}
+
+async function callUspsVerify(userId, { street, unit, city, state, zip5 }) {
+const xml = `
+<AddressValidateRequest USERID="${escapeXml(userId)}">
+<Revision>1</Revision>
+<Address ID="0">
+<Address1>${escapeXml(unit || "")}</Address1>
+<Address2>${escapeXml(street || "")}</Address2>
+<City>${escapeXml(city || "")}</City>
+<State>${escapeXml(state || "")}</State>
+<Zip5>${escapeXml(zip5 || "")}</Zip5>
+<Zip4></Zip4>
+</Address>
+</AddressValidateRequest>`.trim();
+
+const url = `https://secure.shippingapis.com/ShippingAPI.dll?API=Verify&XML=${encodeURIComponent(xml)}`;
+const resp = await fetch(url);
+const text = await resp.text();
+
+// USPS can respond with <Error> OR can put an error inside <Address> tags
+if (text.includes("<Error>")) {
+const msg = (text.match(/<Description>([\s\S]*?)<\/Description>/i)?.[1] || "").trim();
+return { ok: true, found: false, message: msg || "USPS could not verify this address.", text, recommendedLine: "" };
+}
+
+const pick = (tag) => {
+const m = text.match(new RegExp(`<${tag}>([\\s\\S]*?)<\\/${tag}>`, "i"));
+return m ? String(m[1] || "").trim() : "";
+};
+
+const addr2 = pick("Address2");
+const cityR = pick("City");
+const stateR = pick("State");
+const zip5R = pick("Zip5");
+const zip4R = pick("Zip4");
+
+const found = !!(addr2 && cityR && stateR && zip5R);
+const recommendedLine = found ? formatAddressLine(addr2, cityR, stateR, zip5R, zip4R) : "";
+
+return { ok: true, found, recommendedLine, message: "", text };
+}
+
 async function verifyAddressWithUSPS(rawAddress) {
 const userId = process.env.USPS_USER_ID;
+const raw = normalizeRawInput(rawAddress);
 
-const raw = String(rawAddress || '').trim();
-
-// Always build a clean "enteredLine" so your popup can show it
-const parsedForEntered = parseUSAddress(raw);
+const parsedForEntered = parseUSAddress(raw) || null;
 const enteredLine = parsedForEntered
 ? formatAddressLine(parsedForEntered.street, parsedForEntered.city, parsedForEntered.state, parsedForEntered.zip5, parsedForEntered.zip4)
-: raw;
+: String(rawAddress || "").trim();
 
 if (!userId) {
-console.error('❌ USPS_USER_ID missing (Render env var not set)');
 return {
-ok: false,
-found: false,
-showBox: true,
-message: 'Missing USPS_USER_ID on the server. (Set it in Render → Environment and redeploy)',
+ok: false, found: false, showBox: true,
+message: "Missing USPS_USER_ID on the server (Render → Environment).",
 enteredLine,
-recommendedLine: ''
+recommendedLine: ""
 };
 }
 
 const parsed = parseUSAddress(raw);
 if (!parsed) {
 return {
-ok: true,
-found: false,
-showBox: true,
-message: 'Please enter address like: "Street, City, ST ZIP".',
-enteredLine: raw,
-recommendedLine: ''
+ok: true, found: false, showBox: true,
+message: 'Enter like: "Street, City, ST ZIP" (ZIP helps).',
+enteredLine: String(rawAddress || "").trim(),
+recommendedLine: ""
 };
 }
-
-const { street, city, state, zip5 } = parsed;
-
-const xml = `
-<AddressValidateRequest USERID="${escapeXml(userId)}">
-<Revision>1</Revision>
-<Address ID="0">
-<Address1></Address1>
-<Address2>${escapeXml(street)}</Address2>
-<City>${escapeXml(city)}</City>
-<State>${escapeXml(state)}</State>
-<Zip5>${escapeXml(zip5 || '')}</Zip5>
-<Zip4></Zip4>
-</Address>
-</AddressValidateRequest>`.trim();
-
-const url = `https://secure.shippingapis.com/ShippingAPI.dll?API=Verify&XML=${encodeURIComponent(xml)}`;
 
 try {
-const resp = await fetch(url);
-const text = await resp.text();
+const { street: streetRaw, city, state, zip5 } = parsed;
+const split = splitStreetAndUnit(streetRaw);
+const street = split.street;
+const unit = split.unit;
 
-// USPS error response
-if (text.includes('<Error>')) {
-const msg =
-(text.match(/<Description>([\s\S]*?)<\/Description>/i)?.[1] || 'USPS could not verify this address.')
-.trim();
+console.log("USPS PARSED:", { street, unit, city, state, zip5 });
 
-return {
-ok: true,
-found: false,
-showBox: true,
-message: msg,
-enteredLine,
-recommendedLine: ''
-};
+// Try 1: full
+let r = await callUspsVerify(userId, { street, unit, city, state, zip5 });
+
+// Try 2: ZIP-only
+if (!r.found && zip5) {
+r = await callUspsVerify(userId, { street, unit, city: "", state: "", zip5 });
 }
 
-const pick = (tag) => {
-const m = text.match(new RegExp(`<${tag}>([\\s\\S]*?)<\\/${tag}>`, 'i'));
-return m ? String(m[1] || '').trim() : '';
-};
+// Try 3: remove unit and try again
+if (!r.found) {
+const streetNoUnit = String(streetRaw || "")
+.replace(/\b(APT|UNIT|STE|SUITE|#)\b.*$/i, "")
+.trim();
 
-const addr2 = pick('Address2');
-const cityR = pick('City');
-const stateR = pick('State');
-const zip5R = pick('Zip5');
-const zip4R = pick('Zip4');
+if (streetNoUnit && streetNoUnit !== streetRaw) {
+const s2 = splitStreetAndUnit(streetNoUnit);
+r = await callUspsVerify(userId, { street: s2.street, unit: "", city, state, zip5 });
+if (!r.found && zip5) {
+r = await callUspsVerify(userId, { street: s2.street, unit: "", city: "", state: "", zip5 });
+}
+}
+}
 
-const found = !!(addr2 && cityR && stateR && zip5R);
-const recommendedLine = found
-? formatAddressLine(addr2, cityR, stateR, zip5R, zip4R)
-: '';
-
-// Show popup if not found OR different than entered
+const found = !!r.found;
+const recommendedLine = r.recommendedLine || "";
 const showBox = !found ? true : (normalizeAddr(enteredLine) !== normalizeAddr(recommendedLine));
 
 return {
 ok: true,
 found,
 showBox,
-message: found ? '' : 'No USPS match found. You can edit the address or continue.',
+message: found ? "" : (r.message || "No USPS match found. Please edit the address."),
 enteredLine,
 recommendedLine
 };
 
 } catch (e) {
-console.error('USPS API ERROR:', e && e.message ? e.message : e);
 return {
-ok: false,
-found: false,
-showBox: true,
-message: (e && e.message) || 'USPS verify failed',
+ok: false, found: false, showBox: true,
+message: (e && e.message) || "USPS verify failed",
 enteredLine,
-recommendedLine: ''
+recommendedLine: ""
 };
 }
 }
 
-/* ---------------- USPS VERIFY ROUTE (POPUP-READY) ---------------- */
-app.post('/api/usps-verify', express.json(), async (req, res) => {
+/* =========================================================
+ROUTE: POST /api/usps-verify (because index.js uses app.use("/api", uploadRoutes))
+Body: { address: "..." }
+========================================================= */
+router.post("/usps-verify", express.json(), async (req, res) => {
 try {
-const entered = String(req.body?.address || '').trim();
+console.log("USPS VERIFY BODY:", req.body);
+
+const entered = String(req.body?.address || "").trim();
 if (!entered) {
-return res.status(400).json({
-ok: false, found: false, showBox: true,
-message: 'Missing address',
-enteredLine: '',
-recommendedLine: ''
+return res.json({
+ok: false,
+found: false,
+showBox: true,
+enteredLine: "",
+recommendedLine: "",
+message: "Address is required"
 });
 }
 
@@ -417,18 +444,21 @@ const result = await verifyAddressWithUSPS(entered);
 return res.json({
 ok: !!result.ok,
 found: !!result.found,
-showBox: !!result.showBox,
+showBox: result.showBox !== false,
 enteredLine: result.enteredLine || entered,
-recommendedLine: result.recommendedLine || '',
-message: result.message || ''
+recommendedLine: result.recommendedLine || "",
+message: result.message || ""
 });
 
 } catch (err) {
+console.error("USPS VERIFY ERROR:", err);
 return res.json({
-ok: false, found: false, showBox: true,
-message: err && err.message ? err.message : 'Server error',
-enteredLine: String(req.body?.address || ''),
-recommendedLine: ''
+ok: false,
+found: false,
+showBox: true,
+enteredLine: String(req.body?.address || ""),
+recommendedLine: "",
+message: "USPS verification failed."
 });
 }
 });
