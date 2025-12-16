@@ -19,6 +19,13 @@ app.options("*", cors());
 // IMPORTANT: JSON parser ONCE
 app.use(express.json({ limit: "2mb" }));
 
+console.log(
+"📮 USPS_USER_ID exists?",
+!!process.env.USPS_USER_ID,
+"length:",
+(process.env.USPS_USER_ID || "").length
+);
+
 /* --------------------------- GOOGLE OAUTH SETUP --------------------------- */
 
 const oauth2Client = new google.auth.OAuth2(
