@@ -8,6 +8,14 @@ const PDFDocument = require('pdfkit');
 const { google } = require('googleapis');
 const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args));
 const app = express();
+app.use(cors({
+ origin: "*",
+methods: ["GET", "POST", "OPTIONS"],
+allowedHeaders: ["Content-Type", "Accept", "Authorization"]
+}));
+app.options("*", cors());
+// JSON parser — ONCE
+app.use(express.json({ limit: "2mb" }));
 
 /* --------------------------- GOOGLE OAUTH SETUP --------------------------- */
 
@@ -179,13 +187,10 @@ sanitizeName,
 };
 
 /* =========================================================
-USPS ADDRESS VALIDATION — FINAL, POPUP-READY
-- NO cors here
-- NO express.json here
-- Proper APT handling (Address1)
-- Multi-word cities
-- ZIP-only fallback
-- Always returns debug so nothing is hidden
+USPS ADDRESS VALIDATION — FINAL (CORS + APT FIXED)
+- Uses existing app.use(cors())
+- Uses existing app.use(express.json())
+- Browser-safe
 ========================================================= */
 
 const USPS_HOST =
@@ -204,14 +209,6 @@ return String(s || "")
 .replace(/'/g, "&apos;");
 }
 
-function normalizeAddr(s) {
-return String(s || "")
-.toUpperCase()
-.replace(/[.,#]/g, " ")
-.replace(/\s+/g, " ")
-.trim();
-}
-
 function formatAddressLine(street, city, state, zip5, zip4) {
 const zip = [zip5, zip4].filter(Boolean).join("-");
 return `${street}\n${city} ${state} ${zip}`.trim();
@@ -222,18 +219,15 @@ const m = String(raw || "").match(/\b(APT|UNIT|STE|SUITE|#)\s*([A-Z0-9-]+)/i);
 if (!m) return { street: raw, unit: "" };
 return {
 street: raw.slice(0, m.index).trim(),
-unit: m[0].toUpperCase().replace("#", ""),
+unit: m[0].replace("#", "").toUpperCase()
 };
 }
 
-/* -------- Robust US address parser -------- */
 function parseUSAddress(input) {
 const s = String(input || "")
 .replace(/\n+/g, ", ")
 .replace(/\s+/g, " ")
 .trim();
-
-if (!s) return null;
 
 let zip5 = "", zip4 = "";
 const z = s.match(/(\d{5})(?:-(\d{4}))?$/);
@@ -254,14 +248,15 @@ return { street, city, state: state.toUpperCase(), zip5, zip4 };
 const parts = base.split(" ");
 if (parts.length < 3) return null;
 
-const state = parts.at(-1).toUpperCase();
-const city = parts.at(-2);
-const street = parts.slice(0, -2).join(" ");
-
-return { street, city, state, zip5, zip4 };
+return {
+street: parts.slice(0, -2).join(" "),
+city: parts.at(-2),
+state: parts.at(-1).toUpperCase(),
+zip5,
+zip4
+};
 }
 
-/* -------- USPS single call -------- */
 async function callUsps({ street, unit, city, state, zip5 }, userId) {
 const xml = `
 <AddressValidateRequest USERID="${escapeXml(userId)}">
@@ -281,13 +276,10 @@ const resp = await uspsFetch(url);
 const text = await resp.text();
 
 if (text.includes("<Error>")) {
-const msg =
-text.match(/<Description>(.*?)<\/Description>/)?.[1] ||
-"USPS could not verify this address.";
-return { found: false, message: msg, debug: text };
+return { found: false, debug: text };
 }
 
-const pick = (t) =>
+const pick = t =>
 text.match(new RegExp(`<${t}>(.*?)</${t}>`, "i"))?.[1] || "";
 
 const addr2 = pick("Address2");
@@ -307,7 +299,6 @@ debug: text
 };
 }
 
-/* -------- MAIN VERIFY FUNCTION -------- */
 async function verifyAddressWithUSPS(rawAddress) {
 const userId = process.env.USPS_USER_ID;
 if (!userId) {
@@ -317,8 +308,7 @@ found: false,
 showBox: true,
 message: "USPS_USER_ID missing",
 enteredLine: rawAddress,
-recommendedLine: "",
-debug: ""
+recommendedLine: ""
 };
 }
 
@@ -330,8 +320,7 @@ found: false,
 showBox: true,
 message: "Enter address as: Street, City, ST ZIP",
 enteredLine: rawAddress,
-recommendedLine: "",
-debug: ""
+recommendedLine: ""
 };
 }
 
@@ -345,13 +334,11 @@ parsed.zip4
 
 const { street, unit } = splitStreetAndUnit(parsed.street);
 
-// PASS 1 – full
 let r = await callUsps(
 { street, unit, city: parsed.city, state: parsed.state, zip5: parsed.zip5 },
 userId
 );
 
-// PASS 2 – ZIP only
 if (!r.found && parsed.zip5) {
 r = await callUsps(
 { street, unit, city: "", state: "", zip5: parsed.zip5 },
@@ -365,18 +352,23 @@ found: r.found,
 showBox: true,
 enteredLine,
 recommendedLine: r.recommendedLine || "",
-message: r.found ? "" : "USPS could not standardize this address.",
-debug: r.debug || ""
+message: r.found ? "" : "No USPS match found."
 };
 }
 
-/* -------- ROUTE -------- */
+/* ================= USPS ROUTE ================= */
+
 app.post("/api/usps-verify", async (req, res) => {
-const addr = String(req.body?.address || "").trim();
-const result = await verifyAddressWithUSPS(addr);
+// ✅ Explicit CORS insurance
+res.setHeader("Access-Control-Allow-Origin", "*");
+res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+
+const address = String(req.body?.address || "").trim();
+const result = await verifyAddressWithUSPS(address);
 res.json(result);
 });
-
+ 
 /* ----------------------------- CORS (unified) ----------------------------- */
 const ALLOWED_HOSTS = new Set([
 'www.taxlakay.com',
