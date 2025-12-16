@@ -8,25 +8,15 @@ const PDFDocument = require('pdfkit');
 const { google } = require('googleapis');
 const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args));
 const app = express();
-const allowedOrigins = [
-"https://taxlakay.com",
-"https://www.taxlakay.com",
-"https://taxlakay.com/upload-your-form",
-"https://www.taxlakay.com/upload-your-form"
-];
-
 app.use(cors({
-origin: function (origin, cb) {
-// allow requests with no origin (like Postman)
-if (!origin) return cb(null, true);
-if (allowedOrigins.includes(origin)) return cb(null, true);
-return cb(null, false);
-},
+origin: "*",
 methods: ["GET", "POST", "OPTIONS"],
 allowedHeaders: ["Content-Type", "Accept", "Authorization"]
 }));
 
 app.options("*", cors());
+
+// IMPORTANT: JSON parser ONCE
 app.use(express.json({ limit: "2mb" }));
 
 /* --------------------------- GOOGLE OAUTH SETUP --------------------------- */
