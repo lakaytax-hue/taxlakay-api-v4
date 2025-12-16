@@ -4,7 +4,7 @@ const readline = require('readline');
 
 const GOOGLE_OAUTH_CLIENT_ID ='987557178118-q0obi1ls9oi9mceql26uqh962v8htcvg.apps.googleusercontent.com';
 const GOOGLE_OAUTH_CLIENT_SECRET ='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';
-  const GOOGLE_OAUTH_REDIRECT_URI ='http://localhost:3000/oauth2callback';
+const GOOGLE_OAUTH_REDIRECT_URI ='http://localhost:3000/oauth2callback';
 
 const oauth2Client = new google.auth.OAuth2(
 GOOGLE_OAUTH_CLIENT_ID,
