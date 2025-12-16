@@ -186,11 +186,6 @@ USPS ADDRESS VALIDATION — POPUP-READY RESPONSE (READY TO PASTE)
 ok, found, showBox, enteredLine, recommendedLine, message
 ========================================================= */
 
-// ✅ Use a unique fetch name to avoid "already declared" errors
-const uspsFetch = globalThis.fetch
-? (...args) => globalThis.fetch(...args)
-: (...args) => import("node-fetch").then(({ default: f }) => f(...args));
-
 const STATE_MAP = {
 AL:'AL', ALABAMA:'AL', AK:'AK', ALASKA:'AK', AZ:'AZ', ARIZONA:'AZ', AR:'AR', ARKANSAS:'AR',
 CA:'CA', CALIFORNIA:'CA', CO:'CO', COLORADO:'CO', CT:'CT', CONNECTICUT:'CT', DE:'DE', DELAWARE:'DE',
