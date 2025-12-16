@@ -6,6 +6,7 @@ const cors = require('cors');
 const nodemailer = require('nodemailer');
 const PDFDocument = require('pdfkit');
 const { google } = require('googleapis');
+const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args));
 const app = express();
 
 /* --------------------------- GOOGLE OAUTH SETUP --------------------------- */
@@ -287,11 +288,22 @@ const city = cityTokens.join(' ').trim();
 if (!street || !city || !state) return null;
 return { street, city, state, zip5, zip4 };
 }
-
 async function verifyAddressWithUSPS(rawAddress) {
 const userId = process.env.USPS_USER_ID;
 if (!userId) {
 return { ok:false, found:false, showBox:true, message:'Missing USPS_USER_ID', enteredLine: rawAddress || '' };
+}
+console.error('❌ USPS_USER_ID missing');
+return [];
+{
+// If USPS fails → return empty array
+try {
+// your USPS fetch here
+return suggestionsArray; // MUST be []
+} catch (e) {
+console.error('USPS API ERROR:', e.message);
+return [];
+}
 }
 
 const parsed = parseUSAddress(rawAddress);
@@ -372,7 +384,7 @@ return { ok:false, found:false, showBox:true, message: e.message || 'USPS verify
 }
 }
 
-/* ---------------- USPS VERIFY ROUTE (POPUP-READY) ---------------- */
+/* ---------------- USPS VERIFY ROUTE (POPUP-READY) ----------------
 app.post('/api/usps-verify', express.json(), async (req, res) => {
 try {
 const entered = String(req.body?.address || '').trim();
