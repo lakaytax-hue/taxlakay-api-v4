@@ -194,22 +194,25 @@ ensureClientFolder,
 uploadFilesToDrive,
 sanitizeName,
 };
-/* =========================================================
-USPS ADDRESS VALIDATION — POPUP-READY (B MODE) + AUTH BYPASS
-- Always returns: ok, found, showBox, enteredLine, recommendedLine, message
-- B MODE: if no match, recommendedLine falls back to enteredLine (popup shows 2 choices)
-- AUTH BYPASS: if USPS auth fails (80040B1A / USPSCOM::DoAuth), showBox=false (no popup)
-========================================================= */
 
-// ✅ fetch safe for Node 18+ and older environments
-const uspsFetch = globalThis.fetch
-? (...args) => globalThis.fetch(...args)
-: (...args) => import("node-fetch").then(({ default: f }) => f(...args));
+/* =========================================================
+USPS ADDRESS VALIDATION — POPUP-READY (B MODE)
+- Always returns: ok, found, showBox, enteredLine, recommendedLine, message
+- If USPS fails or no match: recommendedLine = enteredLine (so popup shows 2 choices)
+========================================================= */
 
 function escapeXml(s) {
 return String(s || "")
 .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
 .replace(/"/g, "&quot;").replace(/'/g, "&apos;");
+}
+
+function normalizeAddr(s) {
+return String(s || "")
+.toUpperCase()
+.replace(/[.,#]/g, " ")
+.replace(/\s+/g, " ")
+.trim();
 }
 
 function formatAddressLine(street, city, state, zip5, zip4) {
@@ -273,7 +276,6 @@ zip4 = zipMatch[2] || "";
 base = s0.replace(/(\d{5})(?:-\d{4})?\s*$/, "").trim();
 }
 
-// Comma version: Street, City, ST
 if (base.includes(",")) {
 const parts = base.split(",").map(x => x.trim()).filter(Boolean);
 if (parts.length >= 3) {
@@ -284,7 +286,6 @@ if (street && city && state) return { street, city, state, zip5, zip4 };
 }
 }
 
-// No-comma version: ... City ST
 const tokens = base.split(" ").filter(Boolean);
 if (tokens.length < 3) return null;
 
@@ -329,25 +330,12 @@ const xml = `
 const host = process.env.USPS_HOST || "https://secure.shippingapis.com/ShippingAPI.dll";
 const url = `${host}?API=Verify&XML=${encodeURIComponent(xml)}`;
 
-const resp = await uspsFetch(url);
+const resp = await fetch(url);
 const text = await resp.text();
-
-// ✅ Detect USPS auth failure (your screenshot error)
-const authFailed =
-text.includes("80040B1A") ||
-text.includes("USPSCOM::DoAuth") ||
-text.toLowerCase().includes("authorization failure");
 
 if (text.includes("<Error>")) {
 const msg = (text.match(/<Description>([\s\S]*?)<\/Description>/i)?.[1] || "").trim();
-return {
-ok: true,
-found: false,
-message: msg || "USPS could not verify this address.",
-recommendedLine: "",
-authFailed,
-raw: text
-};
+return { ok: true, found: false, message: msg || "USPS could not verify this address.", recommendedLine: "" };
 }
 
 const pick = (tag) => {
@@ -364,52 +352,34 @@ const zip4R = pick("Zip4");
 const found = !!(addr2 && cityR && stateR && zip5R);
 const recommendedLine = found ? formatAddressLine(addr2, cityR, stateR, zip5R, zip4R) : "";
 
-return {
-ok: true,
-found,
-recommendedLine,
-message: "",
-authFailed,
-raw: text
-};
+return { ok: true, found, recommendedLine, message: "" };
 }
 
 async function verifyAddressWithUSPS(rawAddress) {
 const userId = process.env.USPS_USER_ID;
 const raw = normalizeRawInput(rawAddress);
 
-// Always compute enteredLine for popup (even if parse fails)
 const parsedForEntered = parseUSAddress(raw) || null;
 const enteredLine = parsedForEntered
-? formatAddressLine(
-parsedForEntered.street,
-parsedForEntered.city,
-parsedForEntered.state,
-parsedForEntered.zip5,
-parsedForEntered.zip4
-)
+? formatAddressLine(parsedForEntered.street, parsedForEntered.city, parsedForEntered.state, parsedForEntered.zip5, parsedForEntered.zip4)
 : String(rawAddress || "").trim();
 
 if (!userId) {
 return {
-ok: false,
-found: false,
-showBox: true,
+ok: false, found: false, showBox: true,
 message: "Missing USPS_USER_ID on the server (Render → Environment).",
 enteredLine,
-recommendedLine: enteredLine // B MODE fallback
+recommendedLine: enteredLine // ✅ always fill
 };
 }
 
 const parsed = parseUSAddress(raw);
 if (!parsed) {
 return {
-ok: true,
-found: false,
-showBox: true,
+ok: true, found: false, showBox: true,
 message: 'Please enter address like: "Street, City, ST ZIP".',
 enteredLine,
-recommendedLine: enteredLine // B MODE fallback
+recommendedLine: enteredLine // ✅ always fill
 };
 }
 
@@ -422,78 +392,27 @@ const unit = split.unit;
 // Pass 1: full
 let r = await callUspsVerify(userId, { street, unit, city, state, zip5 });
 
-// ✅ AUTH BYPASS: do not block customers if USPS is not activated
-if (r.authFailed) {
-console.warn("⚠️ USPS AUTH FAILED — BYPASSING USPS MODAL");
-return {
-ok: true,
-found: false,
-showBox: false, // ✅ bypass popup
-message: "",
-enteredLine,
-recommendedLine: "" // not needed when bypassing
-};
-}
-
-// Pass 2: ZIP-only
+// Pass 2: ZIP-only if exists
 if (!r.found && zip5) {
 r = await callUspsVerify(userId, { street, unit, city: "", state: "", zip5 });
-
-if (r.authFailed) {
-console.warn("⚠️ USPS AUTH FAILED — BYPASSING USPS MODAL");
-return {
-ok: true,
-found: false,
-showBox: false,
-message: "",
-enteredLine,
-recommendedLine: ""
-};
-}
 }
 
 // Pass 3: remove unit
 if (!r.found) {
-const streetNoUnit = String(streetRaw || "")
-.replace(/\b(APT|UNIT|STE|SUITE|#)\b.*$/i, "")
-.trim();
-
+const streetNoUnit = String(streetRaw || "").replace(/\b(APT|UNIT|STE|SUITE|#)\b.*$/i, "").trim();
 if (streetNoUnit && streetNoUnit !== streetRaw) {
 r = await callUspsVerify(userId, { street: streetNoUnit, unit: "", city, state, zip5 });
-
-if (r.authFailed) {
-console.warn("⚠️ USPS AUTH FAILED — BYPASSING USPS MODAL");
-return {
-ok: true,
-found: false,
-showBox: false,
-message: "",
-enteredLine,
-recommendedLine: ""
-};
-}
-
 if (!r.found && zip5) {
 r = await callUspsVerify(userId, { street: streetNoUnit, unit: "", city: "", state: "", zip5 });
-
-if (r.authFailed) {
-console.warn("⚠️ USPS AUTH FAILED — BYPASSING USPS MODAL");
-return {
-ok: true,
-found: false,
-showBox: false,
-message: "",
-enteredLine,
-recommendedLine: ""
-};
-}
 }
 }
 }
 
 const found = !!r.found;
-const recommendedLine = r.recommendedLine || enteredLine; // ✅ B MODE fallback always
-const showBox = true; // ✅ normal popup confirmation
+const recommendedLine = r.recommendedLine || enteredLine; // ✅ B MODE: fallback always
+
+// Always show popup (your flow wants confirmation)
+const showBox = true;
 
 return {
 ok: true,
@@ -503,29 +422,24 @@ message: found ? "" : (r.message || "No USPS match found. You can continue with 
 enteredLine,
 recommendedLine
 };
+
 } catch (e) {
 return {
-ok: false,
-found: false,
-showBox: true,
+ok: false, found: false, showBox: true,
 message: (e && e.message) || "USPS verify failed",
 enteredLine,
-recommendedLine: enteredLine // B MODE fallback
+recommendedLine: enteredLine // ✅ always fill
 };
 }
 }
 
-/* ---------------- USPS VERIFY ROUTE (POPUP-READY) ----------------
-IMPORTANT: This route RESPECTS result.showBox (so bypass works)
------------------------------------------------------------------- */
+/* ---------------- USPS VERIFY ROUTE (POPUP-READY) ---------------- */
 app.post("/api/usps-verify", async (req, res) => {
 try {
 const entered = String(req.body?.address || "").trim();
 if (!entered) {
 return res.json({
-ok: false,
-found: false,
-showBox: true,
+ok: false, found: false, showBox: true,
 enteredLine: "",
 recommendedLine: "",
 message: "Address is required"
@@ -537,23 +451,21 @@ const result = await verifyAddressWithUSPS(entered);
 return res.json({
 ok: !!result.ok,
 found: !!result.found,
-showBox: !!result.showBox, // ✅ bypass works here
+showBox: true,
 enteredLine: result.enteredLine || entered,
-// If showBox is false, recommendedLine can be empty; if true, always fill for B MODE
-recommendedLine: result.showBox
-? (result.recommendedLine || result.enteredLine || entered)
-: (result.recommendedLine || ""),
+recommendedLine: result.recommendedLine || result.enteredLine || entered, // ✅ always fill
 message: result.message || ""
 });
+
 } catch (err) {
 console.error("USPS VERIFY ERROR:", err);
 return res.json({
 ok: false,
 found: false,
-showBox: false, // ✅ never block user on server error
+showBox: true,
 enteredLine: String(req.body?.address || ""),
-recommendedLine: "",
-message: ""
+recommendedLine: String(req.body?.address || ""), // ✅ always fill
+message: "USPS verification failed. You may continue."
 });
 }
 });
