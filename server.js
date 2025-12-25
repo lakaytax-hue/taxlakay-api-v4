@@ -196,15 +196,23 @@ sanitizeName,
 };
 
 /* =========================================================
-USPS ADDRESS VALIDATION — ALWAYS POPUP + PICK EITHER
-Returns:
-ok, found, showBox, enteredLine, recommendedLine, message
+USPS ADDRESS VALIDATION — POPUP-READY (B MODE)
++ SMART FAKE RECOMMENDER + ZIP LOOKUP (until USPS approves)
+- Always returns: ok, found, showBox, enteredLine, recommendedLine, message
 ========================================================= */
+
+const uspsFetch = globalThis.fetch
+? (...args) => globalThis.fetch(...args)
+: (...args) => import("node-fetch").then(({ default: f }) => f(...args));
 
 function escapeXml(s) {
 return String(s || "")
 .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
 .replace(/"/g, "&quot;").replace(/'/g, "&apos;");
+}
+
+function cleanSpaces(s) {
+return String(s || "").replace(/\s+/g, " ").trim();
 }
 
 function normalizeRawInput(raw) {
@@ -224,7 +232,33 @@ const line2 = [city, state, zip].filter(Boolean).join(" ");
 return [line1, line2].filter(Boolean).join("\n").trim();
 }
 
-// Very tolerant parse: tries to extract zip at end + uses commas if present
+const STATE_MAP = {
+AL:'AL', ALABAMA:'AL', AK:'AK', ALASKA:'AK', AZ:'AZ', ARIZONA:'AZ', AR:'AR', ARKANSAS:'AR',
+CA:'CA', CALIFORNIA:'CA', CO:'CO', COLORADO:'CO', CT:'CT', CONNECTICUT:'CT', DE:'DE', DELAWARE:'DE',
+DC:'DC', DISTRICTOFCOLUMBIA:'DC',
+FL:'FL', FLORIDA:'FL', GA:'GA', GEORGIA:'GA', HI:'HI', HAWAII:'HI', ID:'ID', IDAHO:'ID',
+IL:'IL', ILLINOIS:'IL', IN:'IN', INDIANA:'IN', IA:'IA', IOWA:'IA', KS:'KS', KANSAS:'KS',
+KY:'KY', KENTUCKY:'KY', LA:'LA', LOUISIANA:'LA', ME:'ME', MAINE:'ME', MD:'MD', MARYLAND:'MD',
+MA:'MA', MASSACHUSETTS:'MA', MI:'MI', MICHIGAN:'MI', MN:'MN', MINNESOTA:'MN', MS:'MS', MISSISSIPPI:'MS',
+MO:'MO', MISSOURI:'MO', MT:'MT', MONTANA:'MT', NE:'NE', NEBRASKA:'NE', NV:'NV', NEVADA:'NV',
+NH:'NH', NEWHAMPSHIRE:'NH', NJ:'NJ', NEWJERSEY:'NJ', NM:'NM', NEWMEXICO:'NM', NY:'NY', NEWYORK:'NY',
+NC:'NC', NORTHCAROLINA:'NC', ND:'ND', NORTHDAKOTA:'ND', OH:'OH', OHIO:'OH', OK:'OK', OKLAHOMA:'OK',
+OR:'OR', OREGON:'OR', PA:'PA', PENNSYLVANIA:'PA', RI:'RI', RHODEISLAND:'RI', SC:'SC', SOUTHCAROLINA:'SC',
+SD:'SD', SOUTHDAKOTA:'SD', TN:'TN', TENNESSEE:'TN', TX:'TX', TEXAS:'TX', UT:'UT', UTAH:'UT',
+VT:'VT', VERMONT:'VT', VA:'VA', VIRGINIA:'VA', WA:'WA', WASHINGTON:'WA', WV:'WV', WESTVIRGINIA:'WV',
+WI:'WI', WISCONSIN:'WI', WY:'WY', WYOMING:'WY'
+};
+
+function normStateToken(token) {
+const t = String(token || "").toUpperCase().replace(/[^A-Z]/g, "");
+return STATE_MAP[t] || "";
+}
+
+/**
+* SMART parseUSAddress(raw)
+* - supports commas OR no commas OR line breaks
+* - supports multi-word city (last 1–3 tokens before state)
+*/
 function parseUSAddress(raw) {
 const s0 = normalizeRawInput(raw);
 if (!s0) return null;
@@ -245,35 +279,165 @@ const parts = base.split(",").map(x => x.trim()).filter(Boolean);
 if (parts.length >= 3) {
 const street = parts[0];
 const city = parts[1];
-const state = String(parts[2] || "").trim().toUpperCase().slice(0, 2);
-if (street && city && state.length === 2) return { street, city, state, zip5, zip4 };
+const state = normStateToken(parts[2]);
+if (street && city && state) return { street, city, state, zip5, zip4 };
 }
 }
 
-// fallback no-commas: "... CITY ST"
-const tokens = base.split(" ").filter(Boolean);
+const tokens = base.replace(/[.,]/g, " ").replace(/\s+/g, " ").trim().split(" ").filter(Boolean);
 if (tokens.length < 3) return null;
 
-const state = String(tokens[tokens.length - 1] || "").toUpperCase();
-if (state.length !== 2) return null;
+let stateIndex = -1;
+let state = "";
+for (let i = tokens.length - 1; i >= Math.max(0, tokens.length - 6); i--) {
+const st = normStateToken(tokens[i]);
+if (st) { state = st; stateIndex = i; break; }
+}
+if (!state) return null;
 
-const city = tokens[tokens.length - 2];
-const street = tokens.slice(0, tokens.length - 2).join(" ");
-if (!street || !city) return null;
+const beforeState = tokens.slice(0, stateIndex);
+if (beforeState.length < 2) return null;
 
-return { street, city, state, zip5, zip4 };
+let best = null;
+for (let cityLen = 1; cityLen <= 3; cityLen++) {
+if (beforeState.length - cityLen < 1) continue;
+const streetTokens = beforeState.slice(0, beforeState.length - cityLen);
+const cityTokens = beforeState.slice(beforeState.length - cityLen);
+const street = streetTokens.join(" ").trim();
+const city = cityTokens.join(" ").trim();
+if (!/\d/.test(street)) continue;
+best = { street, city, state, zip5, zip4 };
+}
+return best;
 }
 
 function splitStreetAndUnit(streetRaw) {
 const s = String(streetRaw || "").trim();
-const re = /\b(APT|UNIT|STE|SUITE|#)\s*([A-Z0-9-]+)\b/i;
+const re = /\b(APT|APARTMENT|UNIT|STE|SUITE|#)\s*([A-Z0-9-]+)\b/i;
 const m = s.match(re);
 if (!m) return { street: s, unit: "" };
 const idx = m.index || 0;
 return { street: s.slice(0, idx).trim(), unit: s.slice(idx).trim() };
 }
 
-async function callUspsOnce(userId, { street, unit, city, state, zip5 }) {
+/* ===========================
+ZIP LOOKUP (smart fake city/state)
+Uses: https://api.zippopotam.us/us/{zip}
+=========================== */
+const ZIP_CACHE = new Map();
+async function lookupCityStateByZip(zip5) {
+const z = String(zip5 || "").match(/(\d{5})/)?.[1] || "";
+if (!z) return null;
+if (ZIP_CACHE.has(z)) return ZIP_CACHE.get(z);
+
+try {
+const r = await uspsFetch(`https://api.zippopotam.us/us/${z}`);
+if (!r.ok) { ZIP_CACHE.set(z, null); return null; }
+const j = await r.json();
+const place = j?.places?.[0];
+const city = place?.["place name"] ? String(place["place name"]).toUpperCase() : "";
+const state = place?.["state abbreviation"] ? String(place["state abbreviation"]).toUpperCase() : "";
+const out = (city && state) ? { city, state } : null;
+ZIP_CACHE.set(z, out);
+return out;
+} catch {
+ZIP_CACHE.set(z, null);
+return null;
+}
+}
+
+/* ===========================
+SMART FAKE RECOMMENDATION MODE
+=========================== */
+const STREET_ABBR = [
+[/\bSTREET\b/gi, "ST"],
+[/\bAVENUE\b/gi, "AVE"],
+[/\bBOULEVARD\b/gi, "BLVD"],
+[/\bROAD\b/gi, "RD"],
+[/\bDRIVE\b/gi, "DR"],
+[/\bLANE\b/gi, "LN"],
+[/\bCOURT\b/gi, "CT"],
+[/\bCIRCLE\b/gi, "CIR"],
+[/\bPLACE\b/gi, "PL"],
+[/\bPARKWAY\b/gi, "PKWY"],
+[/\bHIGHWAY\b/gi, "HWY"],
+[/\bTERRACE\b/gi, "TER"],
+[/\bTRAIL\b/gi, "TRL"],
+[/\bSUITE\b/gi, "STE"],
+[/\bAPARTMENT\b/gi, "APT"]
+];
+
+const DIR_ABBR = [
+[/\bNORTH\b/gi, "N"],
+[/\bSOUTH\b/gi, "S"],
+[/\bEAST\b/gi, "E"],
+[/\bWEST\b/gi, "W"],
+[/\bNORTHEAST\b/gi, "NE"],
+[/\bNORTHWEST\b/gi, "NW"],
+[/\bSOUTHEAST\b/gi, "SE"],
+[/\bSOUTHWEST\b/gi, "SW"]
+];
+
+function toZip5Only(z) {
+const m = String(z || "").match(/(\d{5})/);
+return m ? m[1] : "";
+}
+
+function fakeStandardizeStreet(street, unit) {
+let s = String(street || "").trim();
+s = s.replace(/[.,]/g, " ").replace(/\s+/g, " ").trim();
+
+DIR_ABBR.forEach(([re, rep]) => { s = s.replace(re, rep); });
+STREET_ABBR.forEach(([re, rep]) => { s = s.replace(re, rep); });
+
+s = cleanSpaces(s).toUpperCase();
+
+let u = String(unit || "").trim();
+if (u) {
+u = cleanSpaces(u)
+.replace(/\bAPARTMENT\b/gi, "APT")
+.replace(/\bSUITE\b/gi, "STE")
+.toUpperCase();
+// APT2 -> APT 2
+u = u.replace(/\b(APT|STE|UNIT|#)(\d+)/gi, "$1 $2");
+}
+
+return cleanSpaces([s, u].filter(Boolean).join(" "));
+}
+
+async function buildFakeRecommendedLine(rawAddress) {
+const raw = normalizeRawInput(rawAddress);
+const parsed = parseUSAddress(raw);
+
+if (!parsed) {
+const fallback = cleanSpaces(String(rawAddress || "").replace(/[.,]/g, " ")).toUpperCase();
+return fallback || String(rawAddress || "").trim();
+}
+
+const split = splitStreetAndUnit(parsed.street);
+const streetLine = fakeStandardizeStreet(split.street, split.unit);
+
+// Start with user-provided city/state
+let city = cleanSpaces(parsed.city).toUpperCase();
+let state = String(parsed.state || "").toUpperCase().trim();
+const zip5 = toZip5Only(parsed.zip5);
+
+// ✅ Smart upgrade: if ZIP exists, use ZIP lookup to correct city/state
+if (zip5) {
+const cs = await lookupCityStateByZip(zip5);
+if (cs?.city && cs?.state) {
+city = cs.city;
+state = cs.state;
+}
+}
+
+return formatAddressLine(streetLine, city, state, zip5, "");
+}
+
+/* ===========================
+USPS REAL VERIFY CALL
+=========================== */
+async function callUspsVerify(userId, { street, unit, city, state, zip5 }) {
 const xml = `
 <AddressValidateRequest USERID="${escapeXml(userId)}">
 <Revision>1</Revision>
@@ -287,13 +451,15 @@ const xml = `
 </Address>
 </AddressValidateRequest>`.trim();
 
-const url = `https://secure.shippingapis.com/ShippingAPI.dll?API=Verify&XML=${encodeURIComponent(xml)}`;
-const resp = await fetch(url);
+const host = (process.env.USPS_HOST || "https://secure.shippingapis.com/ShippingAPI.dll").trim();
+const url = `${host}?API=Verify&XML=${encodeURIComponent(xml)}`;
+
+const resp = await uspsFetch(url);
 const text = await resp.text();
 
 if (text.includes("<Error>")) {
 const msg = (text.match(/<Description>([\s\S]*?)<\/Description>/i)?.[1] || "").trim();
-return { found: false, recommendedLine: "", message: msg || "USPS could not verify." };
+return { ok: false, found: false, message: msg || "USPS error", recommendedLine: "" };
 }
 
 const pick = (tag) => {
@@ -302,77 +468,156 @@ return m ? String(m[1] || "").trim() : "";
 };
 
 const addr2 = pick("Address2");
+const addr1 = pick("Address1");
 const cityR = pick("City");
 const stateR = pick("State");
 const zip5R = pick("Zip5");
 const zip4R = pick("Zip4");
 
-const found = !!(addr2 && cityR && stateR && zip5R);
-const recommendedLine = found ? formatAddressLine(addr2, cityR, stateR, zip5R, zip4R) : "";
+const streetLine = cleanSpaces([addr2, addr1].filter(Boolean).join(" "));
+const found = !!(streetLine && cityR && stateR && zip5R);
 
-return { found, recommendedLine, message: "" };
+const recommendedLine = found
+? formatAddressLine(streetLine, cityR, stateR, zip5R, zip4R)
+: "";
+
+return { ok: true, found, recommendedLine, message: "" };
 }
 
+/* ===========================
+MAIN VERIFY (B MODE + SMART FAKE + ZIP LOOKUP)
+=========================== */
 async function verifyAddressWithUSPS(rawAddress) {
-const userId = process.env.USPS_USER_ID;
-const enteredLine = String(rawAddress || "").trim(); // EXACT customer input
+const userId = String(process.env.USPS_USER_ID || "")
+.trim()
+.replace(/^"+|"+$/g, "")
+.replace(/^'+|'+$/g, "");
 
+const raw = normalizeRawInput(rawAddress);
+
+const parsedForEntered = parseUSAddress(raw) || null;
+const enteredLine = parsedForEntered
+? formatAddressLine(parsedForEntered.street, parsedForEntered.city, parsedForEntered.state, parsedForEntered.zip5, parsedForEntered.zip4)
+: String(rawAddress || "").trim();
+
+const showBox = true;
+
+// If missing USERID, still show smart fake recommendation
 if (!userId) {
-return { ok: false, found: false, showBox: true, enteredLine, recommendedLine: "", message: "Missing USPS_USER_ID" };
-}
-
-const parsed = parseUSAddress(rawAddress);
-
-// If we can't parse, still show popup (recommended empty)
-if (!parsed) {
+const fake = await buildFakeRecommendedLine(rawAddress);
 return {
-ok: true, found: false, showBox: true,
+ok: false, found: false, showBox,
+message: "USPS not configured. Please confirm your address.",
 enteredLine,
-recommendedLine: "",
-message: 'Please enter address like: "Street, City, ST ZIP".'
+recommendedLine: fake || enteredLine
 };
 }
 
+const parsed = parseUSAddress(raw);
+if (!parsed) {
+const fake = await buildFakeRecommendedLine(rawAddress);
+return {
+ok: true, found: false, showBox,
+message: 'Please enter address like: "Street, City, ST ZIP".',
+enteredLine,
+recommendedLine: fake || enteredLine
+};
+}
+
+try {
 const { street: streetRaw, city, state, zip5 } = parsed;
-const { street, unit } = splitStreetAndUnit(streetRaw);
+const split = splitStreetAndUnit(streetRaw);
 
-// PASS 1: full
-let r = await callUspsOnce(userId, { street, unit, city, state, zip5 });
+// Pass 1: full
+let r = await callUspsVerify(userId, {
+street: split.street,
+unit: split.unit,
+city,
+state,
+zip5
+});
 
-// PASS 2: zip-only (helps when city/state wrong but zip correct)
-if (!r.found && zip5) {
-r = await callUspsOnce(userId, { street, unit, city: "", state: "", zip5 });
+const authFail = /authorization failure/i.test(r.message || "");
+const anyFail = !r.ok || authFail;
+
+// If USPS not approved or error: use smart fake recommendation + zip lookup
+if (anyFail) {
+const fake = await buildFakeRecommendedLine(rawAddress);
+return {
+ok: true,
+found: false,
+showBox,
+message: authFail
+? "USPS verification is pending approval. Please confirm your address."
+: "USPS is unavailable right now. Please confirm your address.",
+enteredLine,
+recommendedLine: fake || enteredLine
+};
 }
 
-// PASS 3: remove unit
+// Pass 2: ZIP-only
+if (!r.found && zip5) {
+r = await callUspsVerify(userId, {
+street: split.street,
+unit: split.unit,
+city: "",
+state: "",
+zip5
+});
+}
+
+// Pass 3: remove unit
 if (!r.found) {
-const streetNoUnit = String(streetRaw || "").replace(/\b(APT|UNIT|STE|SUITE|#)\b.*$/i, "").trim();
+const streetNoUnit = String(streetRaw || "")
+.replace(/\b(APT|APARTMENT|UNIT|STE|SUITE|#)\b.*$/i, "")
+.trim();
+
 if (streetNoUnit && streetNoUnit !== streetRaw) {
-r = await callUspsOnce(userId, { street: streetNoUnit, unit: "", city, state, zip5 });
+r = await callUspsVerify(userId, { street: streetNoUnit, unit: "", city, state, zip5 });
 if (!r.found && zip5) {
-r = await callUspsOnce(userId, { street: streetNoUnit, unit: "", city: "", state: "", zip5 });
+r = await callUspsVerify(userId, { street: streetNoUnit, unit: "", city: "", state: "", zip5 });
 }
 }
 }
+
+const found = !!r.found;
+
+// If USPS did not find, still provide smart fake (so popup helps)
+let recommendedLine = r.recommendedLine;
+if (!recommendedLine) recommendedLine = await buildFakeRecommendedLine(rawAddress);
 
 return {
 ok: true,
-found: !!r.found,
-showBox: true, // ALWAYS show
+found,
+showBox,
+message: found ? "" : "No USPS match found. Please confirm your address.",
 enteredLine,
-recommendedLine: r.recommendedLine || "",
-message: r.found ? "USPS found a standardized address. Choose either one to continue." : (r.message || "No USPS match found. Choose entered or edit it.")
+recommendedLine: recommendedLine || enteredLine
+};
+
+} catch (e) {
+const fake = await buildFakeRecommendedLine(rawAddress);
+return {
+ok: false, found: false, showBox,
+message: (e && e.message) || "USPS verify failed",
+enteredLine,
+recommendedLine: fake || enteredLine
 };
 }
+}
 
-/* ---------------- USPS VERIFY ROUTE ---------------- */
-app.post("/api/usps-verify", async (req, res) => {
+/* =========================================================
+USPS VERIFY ROUTE (POPUP-READY)
+========================================================= */
+app.post("/api/usps-verify", require("express").json(), async (req, res) => {
 try {
 const entered = String(req.body?.address || "").trim();
+
 if (!entered) {
-return res.status(400).json({
+return res.json({
 ok: false, found: false, showBox: true,
-enteredLine: "", recommendedLine: "",
+enteredLine: "",
+recommendedLine: "",
 message: "Address is required"
 });
 }
@@ -384,15 +629,19 @@ ok: !!result.ok,
 found: !!result.found,
 showBox: true,
 enteredLine: result.enteredLine || entered,
-recommendedLine: result.recommendedLine || "",
+recommendedLine: result.recommendedLine || result.enteredLine || entered,
 message: result.message || ""
 });
+
 } catch (err) {
+console.error("USPS VERIFY ERROR:", err);
 return res.json({
-ok: false, found: false, showBox: true,
+ok: false,
+found: false,
+showBox: true,
 enteredLine: String(req.body?.address || ""),
-recommendedLine: "",
-message: err?.message || "Server error"
+recommendedLine: String(req.body?.address || ""),
+message: "USPS verification failed. You may continue."
 });
 }
 });
