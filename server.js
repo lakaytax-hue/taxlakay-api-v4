@@ -198,16 +198,12 @@ sanitizeName,
 };
 
 /* =========================================================
-SMARTY US ADDRESS VERIFICATION — FINAL SERVER EMBED
-Route: POST /api/usps-verify
-Frontend: NO CHANGE REQUIRED
+SMARTY US ADDRESS VERIFICATION (SERVER)
+Uses existing: const fetch = (...) => import('node-fetch')...
+Uses existing: app.use(express.json(...))
+Route stays: POST /api/usps-verify (frontend unchanged)
 ========================================================= */
 
-const fetchFn = globalThis.fetch
-? (...args) => globalThis.fetch(...args)
-: (...args) => import("node-fetch").then(({ default: f }) => f(...args));
-
-/* ---------- Helpers ---------- */
 function normalizeAddress(raw) {
 return String(raw || "")
 .trim()
@@ -222,7 +218,6 @@ function formatLines(line1, line2) {
 return [line1, line2].filter(Boolean).join("\n").trim();
 }
 
-/* ---------- Smarty Verify ---------- */
 async function verifyWithSmarty(rawAddress) {
 const enteredLine = normalizeAddress(rawAddress);
 
@@ -230,7 +225,6 @@ const AUTH_ID = process.env.SMARTY_AUTH_ID;
 const AUTH_TOKEN = process.env.SMARTY_AUTH_TOKEN;
 const LICENSE = process.env.SMARTY_LICENSE || "us-core-cloud";
 
-// Safety fallback if keys missing
 if (!AUTH_ID || !AUTH_TOKEN) {
 return {
 ok: true,
@@ -252,10 +246,9 @@ const url =
 `&street=${encodeURIComponent(enteredLine)}`;
 
 try {
-const resp = await fetchFn(url);
+const resp = await fetch(url);
 const data = await resp.json();
 
-// No match found
 if (!Array.isArray(data) || data.length === 0) {
 return {
 ok: true,
@@ -268,11 +261,7 @@ message: "No verified match found. Please confirm your address."
 }
 
 const c = data[0];
-
-const recommendedLine = formatLines(
-c.delivery_line_1,
-c.last_line
-);
+const recommendedLine = formatLines(c.delivery_line_1, c.last_line);
 
 return {
 ok: true,
@@ -282,7 +271,6 @@ enteredLine,
 recommendedLine,
 message: ""
 };
-
 } catch (err) {
 console.error("SMARTY ERROR:", err);
 return {
@@ -296,10 +284,8 @@ message: "Address verification temporarily unavailable."
 }
 }
 
-/* =========================================================
-SMARTY VERIFY ROUTE (REPLACES USPS ROUTE)
-========================================================= */
-app.post("/api/usps-verify", require("express").json(), async (req, res) => {
+/* ✅ ROUTE (NO require("express").json() here) */
+app.post("/api/usps-verify", async (req, res) => {
 try {
 const address = String(req.body?.address || "").trim();
 
@@ -318,7 +304,7 @@ const result = await verifyWithSmarty(address);
 return res.json(result);
 
 } catch (e) {
-console.error("VERIFY ROUTE ERROR:", e);
+console.error("SMARTY VERIFY ROUTE ERROR:", e);
 return res.json({
 ok: true,
 found: false,
