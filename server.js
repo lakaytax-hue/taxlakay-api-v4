@@ -40,6 +40,7 @@ const PRIVATE_SHEET_URL =
 const BANK_SHEET_URL =
 process.env.BANK_SHEET_URL ||
 'https://script.google.com/macros/s/AKfycbxGQdl6L5V-Ik5dqDKI0yTCyhl-k6i8duZqIqN_YWa7EQm1gr7sQhzE9YU9EAEUSYQvSw/exec';
+
 /* --------------------------- Google Drive Setup (Service Account) --------------------------- */
 
 const DRIVE_PARENT_FOLDER_ID =
@@ -75,7 +76,6 @@ console.error('❌ Failed to init Google Drive (Service Account):', e.message);
 drive = null;
 }
 })();
-
 
 /**
 * Verify the folder exists and is accessible
