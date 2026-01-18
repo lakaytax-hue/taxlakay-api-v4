@@ -44,7 +44,7 @@ process.env.BANK_SHEET_URL ||
 /* --------------------------- Google Drive Setup (Service Account) --------------------------- */
 
 const DRIVE_PARENT_FOLDER_ID =
-process.env.GOOGLE_DRIVE_PARENT_FOLDER_ID || ";
+process.env.GOOGLE_DRIVE_PARENT_FOLDER_ID || '16tx8uhyrq79K481-2Ey1SZz-ScRb5EJh?dmr';
 
 const GOOGLE_SERVICE_ACCOUNT_EMAIL =
 process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || ";
