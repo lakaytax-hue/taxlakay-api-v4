@@ -40,6 +40,7 @@ const PRIVATE_SHEET_URL =
 const BANK_SHEET_URL =
 process.env.BANK_SHEET_URL ||
 'https://script.google.com/macros/s/AKfycbxGQdl6L5V-Ik5dqDKI0yTCyhl-k6i8duZqIqN_YWa7EQm1gr7sQhzE9YU9EAEUSYQvSw/exec';
+
 /* --------------------------- Google Drive Setup (Service Account) --------------------------- */
 
 const DRIVE_PARENT_FOLDER_ID =
@@ -51,7 +52,24 @@ process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || '';
 const GOOGLE_PRIVATE_KEY =
 (process.env.GOOGLE_PRIVATE_KEY || '').replace(/\\n/g, '\n');
 
-let drive = null;
+const SHARED_DRIVE_ID = process.env.GOOGLE_SHARED_DRIVE_ID || '';let drive = null;
+
+/**
+* Initialize Google Drive with Shared Drive support
+*/
+async function initSharedDrive() {
+try {
+// Validate configuration
+if (!GOOGLE_SERVICE_ACCOUNT_EMAIL || !GOOGLE_PRIVATE_KEY) {
+console.error('❌ Google Service Account credentials missing');
+return false;
+}
+
+if (!SHARED_DRIVE_ID) {
+console.error('❌ GOOGLE_SHARED_DRIVE_ID not set');
+console.log('👉 You need to create a Shared Drive and add the service account as a member');
+return false;
+}
 
 (function initDrive() {
 try {
