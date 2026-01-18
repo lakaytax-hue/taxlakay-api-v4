@@ -41,192 +41,220 @@ const BANK_SHEET_URL =
 process.env.BANK_SHEET_URL ||
 'https://script.google.com/macros/s/AKfycbxGQdl6L5V-Ik5dqDKI0yTCyhl-k6i8duZqIqN_YWa7EQm1gr7sQhzE9YU9EAEUSYQvSw/exec';
 
-/* --------------------------- Google Drive Setup (Service Account) --------------------------- */
+/* --------------------------- Google Drive Setup (Service Account) ---------------------------
+REQUIRED ENV VARS (Render -> Environment):
+- GOOGLE_SERVICE_ACCOUNT_EMAIL
+- GOOGLE_PRIVATE_KEY (keep \n, code converts to real newlines)
 
-const DRIVE_PARENT_FOLDER_ID =
-process.env.GOOGLE_DRIVE_PARENT_FOLDER_ID || '16tx8uhyrq79K481-2Ey1SZz-ScRb5EJh?dmr';
+OPTIONAL ENV VARS:
+- GOOGLE_DRIVE_PARENT_FOLDER_ID (folder where uploads go)
+- GOOGLE_SHARED_DRIVE_ID (only if parent folder is inside a Shared Drive)
+- PERSONAL_EMAIL (to share files/folders with you)
+-------------------------------------------------------------------------------------------- */
 
-const GOOGLE_SERVICE_ACCOUNT_EMAIL =
-process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || ";
 
-const GOOGLE_PRIVATE_KEY =
-(process.env.GOOGLE_PRIVATE_KEY || '').replace(/\\n/g, '\n');
 
-const SHARED_DRIVE_ID = process.env.GOOGLE_SHARED_DRIVE_ID || ";
+const TARGET_FOLDER_NAME = "TaxLakay-Client Uploads";
+
+// ✅ IMPORTANT: Folder ID should be ONLY the ID (no ?dmr, no /folders/, no full URL)
+const GOOGLE_DRIVE_PARENT_FOLDER_ID =
+process.env.GOOGLE_DRIVE_PARENT_FOLDER_ID || "16tx8uhyrq79K481-2Ey1SZz-ScRb5EJh";
+
+const GOOGLE_SERVICE_ACCOUNT_EMAIL = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || "";
+const GOOGLE_PRIVATE_KEY = (process.env.GOOGLE_PRIVATE_KEY || "").replace(/\\n/g, "\n");
+
+// If you use a Shared Drive, set this (otherwise leave blank)
+const GOOGLE_SHARED_DRIVE_ID = process.env.GOOGLE_SHARED_DRIVE_ID || "";
+
+// Your personal email (optional) to auto-share uploads
+const PERSONAL_EMAIL = process.env.PERSONAL_EMAIL || "";
 
 let drive = null;
-let targetFolderId = null;
+let isInitialized = false;
 
 /**
-* Initialize Google Drive with Shared Drive support
+* Initialize Drive client
 */
-async function initSharedDrive() {
+async function initDriveService() {
 try {
-// Validate configuration
 if (!GOOGLE_SERVICE_ACCOUNT_EMAIL || !GOOGLE_PRIVATE_KEY) {
-console.error('❌ Google Service Account credentials missing');
+console.warn("⚠️ Google Drive not configured (missing service account email or private key).");
 return false;
-}
-
-if (!SHARED_DRIVE_ID) {
-console.error('❌ GOOGLE_SHARED_DRIVE_ID not set');
-console.log('👉 You need to create a Shared Drive and add the service account as a member');
-return false;
-}
-
-(function initDrive() {
-try {
-if (!DRIVE_PARENT_FOLDER_ID || !GOOGLE_SERVICE_ACCOUNT_EMAIL || !GOOGLE_PRIVATE_KEY) {
-console.warn('⚠️ Google Drive Service Account not fully configured. Skipping Drive uploads.');
-return;
 }
 
 const auth = new google.auth.JWT(
 GOOGLE_SERVICE_ACCOUNT_EMAIL,
 null,
 GOOGLE_PRIVATE_KEY,
-['https://www.googleapis.com/auth/drive'] // or drive.file if you prefer
+["https://www.googleapis.com/auth/drive"]
 );
 
-drive = google.drive({ version: 'v3', auth });
-console.log('✅ Google Drive Service Account initialized');
-console.log('📁 Parent folder for client uploads:', DRIVE_PARENT_FOLDER_ID);
-} catch (e) {
-console.error('❌ Failed to init Google Drive (Service Account):', e.message);
-drive = null;
-}
-})();
-/**
-* Verify the folder exists and is accessible
-*/
-async function verifyFolderExists() {
-try {
-const folder = await drive.files.get({
-fileId: GOOGLE_DRIVE_PARENT_FOLDER_ID,
-fields: 'id, name, capabilities'
-});
+drive = google.drive({ version: "v3", auth });
+isInitialized = true;
 
-console.log(`✅ Folder verified: ${folder.data.name}`);
-console.log(`✏️ Can edit: ${folder.data.capabilities.canEdit}`);
+console.log("✅ Google Drive Service Account initialized");
+console.log("📁 Parent folder:", GOOGLE_DRIVE_PARENT_FOLDER_ID);
+console.log("🗂️ Shared Drive ID:", GOOGLE_SHARED_DRIVE_ID || "(not set)");
+console.log("👤 Personal email share:", PERSONAL_EMAIL || "(not set)");
 
-// Ensure folder is shared with personal email
-await ensureFolderSharing();
+// Optional: verify folder access at startup
+await verifyFolderExists();
 
 return true;
-} catch (error) {
-console.error('❌ Cannot access folder:', error.message);
-
-if (error.code === 404) {
-console.error(`💡 Folder ${GOOGLE_DRIVE_PARENT_FOLDER_ID} not found`);
-console.error('👉 Create the folder in Google Drive and update the ID in .env');
-} else if (error.code === 403) {
-console.error('🔒 Permission denied');
-console.error(`👉 Share the folder with: ${GOOGLE_SERVICE_ACCOUNT_EMAIL}`);
-}
-
+} catch (e) {
+console.error("❌ Failed to init Google Drive:", e.message);
+drive = null;
+isInitialized = false;
 return false;
 }
 }
 
 /**
-* Ensure folder is shared with personal email
+* Verify the parent folder exists and is accessible
+*/
+async function verifyFolderExists() {
+if (!drive) return false;
+
+try {
+const folder = await drive.files.get({
+fileId: GOOGLE_DRIVE_PARENT_FOLDER_ID,
+fields: "id,name,mimeType,capabilities",
+supportsAllDrives: true
+});
+
+console.log(`✅ Folder verified: ${folder.data.name}`);
+console.log(`✏️ Can edit: ${folder.data.capabilities?.canEdit ? "YES" : "NO"}`);
+
+// Optional: ensure folder shared with PERSONAL_EMAIL
+if (PERSONAL_EMAIL) {
+await ensureFolderSharing();
+}
+
+return true;
+} catch (error) {
+console.error("❌ Cannot access parent folder:", error.message);
+
+if (error.code === 404) {
+console.error("💡 Folder not found. Make sure GOOGLE_DRIVE_PARENT_FOLDER_ID is correct.");
+} else if (error.code === 403) {
+console.error("🔒 Permission denied. Share the folder with the service account email:");
+console.error(`👉 ${GOOGLE_SERVICE_ACCOUNT_EMAIL}`);
+console.error("👉 If the folder is in a Shared Drive, also add the service account to that Shared Drive.");
+}
+return false;
+}
+}
+
+/**
+* Ensure parent folder is shared with PERSONAL_EMAIL (optional)
 */
 async function ensureFolderSharing() {
 try {
-// Check current permissions
 const permissions = await drive.permissions.list({
 fileId: GOOGLE_DRIVE_PARENT_FOLDER_ID,
-fields: 'permissions(emailAddress, role)'
+fields: "permissions(emailAddress, role, type)",
+supportsAllDrives: true
 });
 
-const existingPermissions = permissions.data.permissions || [];
-const isShared = existingPermissions.some(
-p => p.emailAddress === PERSONAL_EMAIL
-);
+const existing = permissions.data.permissions || [];
+const alreadyShared = existing.some((p) => p.emailAddress === PERSONAL_EMAIL);
 
-if (!isShared) {
-console.log(`📤 Sharing folder with ${PERSONAL_EMAIL}...`);
-await shareFile(GOOGLE_DRIVE_PARENT_FOLDER_ID, PERSONAL_EMAIL, 'writer');
+if (!alreadyShared) {
+console.log(`📤 Sharing parent folder with ${PERSONAL_EMAIL}...`);
+await shareFile(GOOGLE_DRIVE_PARENT_FOLDER_ID, PERSONAL_EMAIL, "writer");
 console.log(`✅ Folder shared with ${PERSONAL_EMAIL}`);
 } else {
 console.log(`✅ Folder already shared with ${PERSONAL_EMAIL}`);
 }
 } catch (error) {
-console.warn('⚠️ Could not update folder sharing:', error.message);
+console.warn("⚠️ Could not update folder sharing:", error.message);
 }
 }
 
 /**
-* Main upload function - Uploads file to TaxLakay-Client Uploads folder
+* Share a file/folder with a specific email (optional)
+*/
+async function shareFile(fileId, email, role = "writer") {
+try {
+if (!drive) return false;
+
+await drive.permissions.create({
+fileId,
+resource: {
+type: "user",
+role,
+emailAddress: email
+},
+sendNotificationEmail: false,
+supportsAllDrives: true,
+fields: "id"
+});
+
+return true;
+} catch (error) {
+console.warn(`⚠️ Could not share with ${email}:`, error.message);
+return false;
+}
+}
+
+/**
+* Upload file buffer into parent folder
 */
 async function uploadFile(fileBuffer, fileName, mimeType) {
-// Ensure drive is initialized
-if (!isInitialized && !await initDriveService()) {
-throw new Error('Google Drive not initialized');
+if (!isInitialized) {
+const ok = await initDriveService();
+if (!ok) throw new Error("Google Drive not initialized");
 }
 
 try {
-console.log(`📤 Uploading "${fileName}" to "${TARGET_FOLDER_NAME}"...`);
-
-// File metadata - CRITICAL: Include parents to place in folder
 const fileMetadata = {
 name: fileName,
-parents: [GOOGLE_DRIVE_PARENT_FOLDER_ID] // This puts file in your folder
+parents: [GOOGLE_DRIVE_PARENT_FOLDER_ID]
 };
 
 const media = {
-mimeType: mimeType,
-body: fileBuffer instanceof Buffer ? fileBuffer : Buffer.from(fileBuffer)
+mimeType,
+body: Buffer.isBuffer(fileBuffer) ? fileBuffer : Buffer.from(fileBuffer)
 };
 
-// Upload file
 const response = await drive.files.create({
 resource: fileMetadata,
-media: media,
-fields: 'id, name, webViewLink, webContentLink, size, mimeType, createdTime'
+media,
+fields: "id,name,webViewLink,webContentLink,size,mimeType,createdTime",
+supportsAllDrives: true
 });
 
-const uploadedFile = response.data;
+const uploaded = response.data;
 
-console.log(`✅ Upload successful!`);
-console.log(`📄 File: ${uploadedFile.name}`);
-console.log(`🆔 File ID: ${uploadedFile.id}`);
-console.log(`🔗 View: ${uploadedFile.webViewLink}`);
+console.log("✅ Upload successful:", uploaded.name, uploaded.id);
 
-// Share file with personal email
-await shareFile(uploadedFile.id, PERSONAL_EMAIL, 'writer');
+// Optional share with your personal email
+if (PERSONAL_EMAIL) {
+await shareFile(uploaded.id, PERSONAL_EMAIL, "writer");
+}
 
 return {
 success: true,
-fileId: uploadedFile.id,
-fileName: uploadedFile.name,
-fileLink: uploadedFile.webViewLink,
-downloadLink: uploadedFile.webContentLink,
-size: uploadedFile.size,
-mimeType: uploadedFile.mimeType,
-createdTime: uploadedFile.createdTime,
+fileId: uploaded.id,
+fileName: uploaded.name,
+fileLink: uploaded.webViewLink,
+downloadLink: uploaded.webContentLink,
+size: uploaded.size,
+mimeType: uploaded.mimeType,
+createdTime: uploaded.createdTime,
 folderName: TARGET_FOLDER_NAME,
 folderId: GOOGLE_DRIVE_PARENT_FOLDER_ID
 };
-
 } catch (error) {
-console.error('❌ Upload failed:', error.message);
+console.error("❌ Upload failed:", error.message);
 
-// Provide helpful error messages
-if (error.message.includes('parents')) {
-console.error('💡 TIP: Make sure parents field includes correct folder ID');
-console.error(`Current folder ID: ${GOOGLE_DRIVE_PARENT_FOLDER_ID}`);
+if (error.code === 403) {
+console.error("🔒 Permission issue. Ensure:");
+console.error(`1) Folder shared with service account: ${GOOGLE_SERVICE_ACCOUNT_EMAIL}`);
+console.error("2) If Shared Drive: service account is added as a member to that Shared Drive");
 }
 
-if (error.message.includes('permission') || error.code === 403) {
-console.error('🔒 Permission issue detected');
-console.error(`Share folder ${GOOGLE_DRIVE_PARENT_FOLDER_ID} with ${GOOGLE_SERVICE_ACCOUNT_EMAIL}`);
-}
-
-return {
-success: false,
-error: error.message
-};
+return { success: false, error: error.message };
 }
 }
 
@@ -238,73 +266,46 @@ try {
 const fileName = customName || path.basename(filePath);
 const fileBuffer = fs.readFileSync(filePath);
 const mimeType = getMimeType(filePath);
-
 return await uploadFile(fileBuffer, fileName, mimeType);
 } catch (error) {
-console.error('❌ Failed to read file:', error.message);
+console.error("❌ Failed to read file:", error.message);
 return { success: false, error: error.message };
 }
 }
 
 /**
-* Share a file/folder with specific email
-*/
-async function shareFile(fileId, email, role = 'writer') {
-try {
-const permission = {
-type: 'user',
-role: role,
-emailAddress: email
-};
-
-await drive.permissions.create({
-fileId: fileId,
-resource: permission,
-sendNotificationEmail: false,
-fields: 'id'
-});
-
-return true;
-} catch (error) {
-console.warn(`⚠️ Could not share file with ${email}:`, error.message);
-return false;
-}
-}
-
-/**
-* Create subfolder for client inside main folder
+* Create a subfolder for a client inside parent folder
 */
 async function createClientFolder(clientName, clientId = null) {
-if (!isInitialized && !await initDriveService()) {
-throw new Error('Google Drive not initialized');
+if (!isInitialized) {
+const ok = await initDriveService();
+if (!ok) throw new Error("Google Drive not initialized");
 }
 
 try {
-// Generate folder name
 const folderName = clientId
 ? `${clientName} (${clientId})`
-: `${clientName} - ${new Date().toISOString().split('T')[0]}`;
-
-console.log(`📁 Creating client folder: "${folderName}"...`);
+: `${clientName} - ${new Date().toISOString().split("T")[0]}`;
 
 const folderMetadata = {
 name: folderName,
-mimeType: 'application/vnd.google-apps.folder',
+mimeType: "application/vnd.google-apps.folder",
 parents: [GOOGLE_DRIVE_PARENT_FOLDER_ID]
 };
 
 const response = await drive.files.create({
 resource: folderMetadata,
-fields: 'id, name, webViewLink'
+fields: "id,name,webViewLink",
+supportsAllDrives: true
 });
 
 const folder = response.data;
 
-console.log(`✅ Client folder created: ${folder.name}`);
-console.log(`📁 Folder ID: ${folder.id}`);
+console.log("✅ Client folder created:", folder.name, folder.id);
 
-// Share folder with personal email
-await shareFile(folder.id, PERSONAL_EMAIL, 'writer');
+if (PERSONAL_EMAIL) {
+await shareFile(folder.id, PERSONAL_EMAIL, "writer");
+}
 
 return {
 success: true,
@@ -313,212 +314,56 @@ folderName: folder.name,
 folderLink: folder.webViewLink,
 parentFolderId: GOOGLE_DRIVE_PARENT_FOLDER_ID
 };
-
 } catch (error) {
-console.error('❌ Failed to create client folder:', error.message);
+console.error("❌ Failed to create client folder:", error.message);
 return { success: false, error: error.message };
 }
 }
 
 /**
-* Get MIME type based on file extension
-*/
-function getMimeType(filePath) {
-const extension = path.extname(filePath).toLowerCase().replace('.', '');
-
-const mimeTypes = {
-// Images
-'jpg': 'image/jpeg',
-'jpeg': 'image/jpeg',
-'png': 'image/png',
-'gif': 'image/gif',
-'bmp': 'image/bmp',
-'webp': 'image/webp',
-'svg': 'image/svg+xml',
-
-// Documents
-'pdf': 'application/pdf',
-'txt': 'text/plain',
-'csv': 'text/csv',
-
-// Microsoft Office
-'doc': 'application/msword',
-'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-'xls': 'application/vnd.ms-excel',
-'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-'ppt': 'application/vnd.ms-powerpoint',
-'pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-
-// Archives
-'zip': 'application/zip',
-'rar': 'application/x-rar-compressed',
-'7z': 'application/x-7z-compressed',
-
-// Other
-'json': 'application/json',
-'xml': 'application/xml',
-'html': 'text/html'
-};
-
-return mimeTypes[extension] || 'application/octet-stream';
-}
-
-/**
-* List all files in the TaxLakay folder
+* List files in the parent folder
 */
 async function listFilesInFolder() {
-if (!isInitialized && !await initDriveService()) {
-throw new Error('Google Drive not initialized');
+if (!isInitialized) {
+const ok = await initDriveService();
+if (!ok) throw new Error("Google Drive not initialized");
 }
 
 try {
-console.log(`📂 Listing files in "${TARGET_FOLDER_NAME}":`);
-
 const response = await drive.files.list({
 q: `'${GOOGLE_DRIVE_PARENT_FOLDER_ID}' in parents and trashed=false`,
-fields: 'files(id, name, mimeType, size, createdTime, modifiedTime)',
-orderBy: 'createdTime desc',
-pageSize: 50
+fields: "files(id,name,mimeType,size,createdTime,modifiedTime)",
+orderBy: "createdTime desc",
+pageSize: 50,
+supportsAllDrives: true,
+includeItemsFromAllDrives: true,
+corpora: GOOGLE_SHARED_DRIVE_ID ? "drive" : "user",
+driveId: GOOGLE_SHARED_DRIVE_ID || undefined
 });
 
-const files = response.data.files;
-
-if (files.length === 0) {
-console.log('📭 Folder is empty');
-} else {
-console.log(`📊 Found ${files.length} file(s):`);
-files.forEach((file, index) => {
-const size = file.size ? `${(file.size / 1024).toFixed(2)} KB` : 'N/A';
-const date = new Date(file.createdTime).toLocaleDateString();
-console.log(`${index + 1}. ${file.name} (${size}) - ${date}`);
-});
-}
-
-return files;
+return response.data.files || [];
 } catch (error) {
-console.error('❌ Failed to list files:', error.message);
+console.error("❌ Failed to list files:", error.message);
 return [];
 }
 }
 
 /**
-* Get folder info and permissions
+* Folder info & permissions
 */
 async function getFolderInfo() {
-if (!isInitialized && !await initDriveService()) {
-throw new Error('Google Drive not initialized');
+if (!isInitialized) {
+const ok = await initDriveService();
+if (!ok) throw new Error("Google Drive not initialized");
 }
 
 try {
 const folder = await drive.files.get({
 fileId: GOOGLE_DRIVE_PARENT_FOLDER_ID,
-fields: 'id, name, mimeType, createdTime, modifiedTime, size, capabilities, permissions'
-});
-
-const permissions = await drive.permissions.list({
-fileId: GOOGLE_DRIVE_PARENT_FOLDER_ID,
-fields: 'permissions(id, emailAddress, role, type)'
-});
-
-console.log('📁 Folder Information:');
-console.log(` Name: ${folder.data.name}`);
-console.log(` ID: ${folder.data.id}`);
-console.log(` Type: ${folder.data.mimeType}`);
-console.log(` Created: ${folder.data.createdTime}`);
-console.log(` Can edit: ${folder.data.capabilities.canEdit}`);
-
-console.log('\n👥 Permissions:');
-permissions.data.permissions.forEach(perm => {
-const email = perm.emailAddress || perm.type;
-console.log(` - ${email}: ${perm.role}`);
-});
-
-return { folder: folder.data, permissions: permissions.data.permissions };
-} catch (error) {
-console.error('❌ Failed to get folder info:', error.message);
-return null;
-}
-}
-
-/**
-* Diagnostic function - Run this if having issues
-*/
-async function diagnose() {
-console.log('🔍 Google Drive Diagnostic Report\n');
-
-console.log('1. Checking configuration...');
-console.log(` Service Account: ${GOOGLE_SERVICE_ACCOUNT_EMAIL ? '✅ Set' : '❌ Missing'}`);
-console.log(` Private Key: ${GOOGLE_PRIVATE_KEY ? '✅ Set' : '❌ Missing'}`);
-console.log(` Folder ID: ${GOOGLE_DRIVE_PARENT_FOLDER_ID ? '✅ Set' : '❌ Missing'}`);
-console.log(` Personal Email: ${PERSONAL_EMAIL}`);
-
-if (!GOOGLE_SERVICE_ACCOUNT_EMAIL || !GOOGLE_PRIVATE_KEY || !GOOGLE_DRIVE_PARENT_FOLDER_ID) {
-console.log('\n❌ Configuration incomplete. Please check .env file.');
-return;
-}
-
-console.log('\n2. Initializing drive service...');
-const initialized = await initDriveService();
-console.log(` Drive initialized: ${initialized ? '✅' : '❌'}`);
-
-if (initialized) {
-console.log('\n3. Testing folder access...');
-const folderInfo = await getFolderInfo();
-
-if (folderInfo) {
-console.log('\n4. Listing files in folder...');
-await listFilesInFolder();
-
-console.log('\n5. Checking sharing status...');
-const hasPersonalEmail = folderInfo.permissions.some(
-p => p.emailAddress === PERSONAL_EMAIL
-);
-console.log(` Shared with ${PERSONAL_EMAIL}: ${hasPersonalEmail ? '✅' : '❌'}`);
-
-if (!hasPersonalEmail) {
-console.log(' 👉 Run: await ensureFolderSharing() to fix');
-}
-}
-}
-
-console.log('\n📝 Summary:');
-console.log(' • Files will be uploaded to:', TARGET_FOLDER_NAME);
-console.log(' • Files will be shared with:', PERSONAL_EMAIL);
-console.log(' • Make sure folder is shared with service account');
-console.log(' • Service account needs "Editor" permission');
-}
-
-// Initialize on require (optional)
-// initDriveService().then(initialized => {
-// if (initialized) {
-// console.log('✅ Drive service ready');
-// }
-// });
-
-// Export all functions
-module.exports = {
-// Core functions
-uploadFileFromPath,
-
-// Folder operations
-createClientFolder,
-listFilesInFolder,
-getFolderInfo,
-
-// Utilities
-shareFile,
-diagnose,
-
-// Getters
-getFolderId: () => GOOGLE_DRIVE_PARENT_FOLDER_ID,
-getFolderName: () => TARGET_FOLDER_NAME,
-getPersonalEmail: () => PERSONAL_EMAIL,
-
-// Status
-isInitialized: () => isInitialized
-};
-
-/* Small helpers for Drive names */
+fields: "id,name,mimeType,createdTime,modifiedTime,capabilities",
+supports
+ 
+ /* Small helpers for Drive names */
 function sanitizeName(str) {
 if (!str) return '';
 return String(str).replace(/[<>:"/\\|?*]+/g, '').trim();
