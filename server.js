@@ -43,9 +43,6 @@ process.env.BANK_SHEET_URL ||
 
 /* --------------------------- Google Drive Setup (Service Account) --------------------------- */
 
-const fs = require('fs');
-const { google } = require('googleapis');
-
 // Your specific configuration
 const PERSONAL_EMAIL = 'lakaytax@gmail.com'; // Your personal email
 const TARGET_FOLDER_NAME = 'TaxLakay-Client Uploads'; // The folder you want files in
