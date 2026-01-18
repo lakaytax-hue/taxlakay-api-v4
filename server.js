@@ -43,39 +43,432 @@ process.env.BANK_SHEET_URL ||
 
 /* --------------------------- Google Drive Setup (Service Account) --------------------------- */
 
-const DRIVE_PARENT_FOLDER_ID =
-process.env.GOOGLE_DRIVE_PARENT_FOLDER_ID || '';
+const fs = require('fs');
+const { google } = require('googleapis');
 
-const GOOGLE_SERVICE_ACCOUNT_EMAIL =
-process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || '';
-
-const GOOGLE_PRIVATE_KEY =
-(process.env.GOOGLE_PRIVATE_KEY || '').replace(/\\n/g, '\n');
+// Your specific configuration
+const PERSONAL_EMAIL = 'lakaytax@gmail.com'; // Your personal email
+const TARGET_FOLDER_NAME = 'TaxLakay-Client Uploads'; // The folder you want files in
+const GOOGLE_SERVICE_ACCOUNT_EMAIL = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || '';
+const GOOGLE_PRIVATE_KEY = (process.env.GOOGLE_PRIVATE_KEY || '').replace(/\\n/g, '\n');
 
 let drive = null;
+let targetFolderId = null; // Will store the ID of "TaxLakay-Client Uploads"
 
-(function initDrive() {
+(async function initDrive() {
 try {
-if (!DRIVE_PARENT_FOLDER_ID || !GOOGLE_SERVICE_ACCOUNT_EMAIL || !GOOGLE_PRIVATE_KEY) {
+if (!GOOGLE_SERVICE_ACCOUNT_EMAIL || !GOOGLE_PRIVATE_KEY) {
 console.warn('⚠️ Google Drive Service Account not fully configured. Skipping Drive uploads.');
 return;
 }
 
+// Authenticate service account
 const auth = new google.auth.JWT(
 GOOGLE_SERVICE_ACCOUNT_EMAIL,
 null,
 GOOGLE_PRIVATE_KEY,
-['https://www.googleapis.com/auth/drive'] // or drive.file if you prefer
+['https://www.googleapis.com/auth/drive'] // Full drive access
 );
 
 drive = google.drive({ version: 'v3', auth });
 console.log('✅ Google Drive Service Account initialized');
-console.log('📁 Parent folder for client uploads:', DRIVE_PARENT_FOLDER_ID);
+console.log('👤 Service account:', GOOGLE_SERVICE_ACCOUNT_EMAIL);
+console.log('📧 Will share files with:', PERSONAL_EMAIL);
+console.log('📁 Target folder:', TARGET_FOLDER_NAME);
+
+// Step 1: Find or create the target folder
+targetFolderId = await findOrCreateFolder(TARGET_FOLDER_NAME);
+
+if (!targetFolderId) {
+console.error('❌ Failed to setup target folder. Uploads will not work.');
+return;
+}
+
+console.log(`🎯 Target folder ID set to: ${targetFolderId}`);
+console.log(`🔗 Folder link: https://drive.google.com/drive/folders/${targetFolderId}`);
+
 } catch (e) {
-console.error('❌ Failed to init Google Drive (Service Account):', e.message);
+console.error('❌ Failed to initialize Google Drive:', e.message);
 drive = null;
+targetFolderId = null;
 }
 })();
+
+/**
+* Find or create the target folder "TaxLakay-Client Uploads"
+* Returns folder ID or null if failed
+*/
+async function findOrCreateFolder(folderName) {
+if (!drive) {
+console.error('❌ Drive not initialized');
+return null;
+}
+
+try {
+console.log(`🔍 Searching for folder: "${folderName}"...`);
+
+// Search for folder by name
+const searchResponse = await drive.files.list({
+q: `name='${folderName}' and mimeType='application/vnd.google-apps.folder' and trashed=false`,
+fields: 'files(id, name, parents, permissions)',
+spaces: 'drive'
+});
+
+const folders = searchResponse.data.files;
+
+if (folders && folders.length > 0) {
+// Found existing folder
+const existingFolder = folders[0];
+console.log(`✅ Found existing folder: "${existingFolder.name}" (ID: ${existingFolder.id})`);
+
+// Check if service account has access to this folder
+await ensureFolderAccess(existingFolder.id);
+
+return existingFolder.id;
+} else {
+// Create new folder
+console.log(`📁 Creating new folder: "${folderName}"...`);
+
+const folderMetadata = {
+name: folderName,
+mimeType: 'application/vnd.google-apps.folder'
+};
+
+const createResponse = await drive.files.create({
+resource: folderMetadata,
+fields: 'id, name, webViewLink'
+});
+
+const newFolder = createResponse.data;
+console.log(`✅ Created new folder: "${newFolder.name}" (ID: ${newFolder.id})`);
+
+// Share folder with your email
+await shareFolderWithEmail(newFolder.id, PERSONAL_EMAIL, 'writer');
+
+return newFolder.id;
+}
+
+} catch (error) {
+console.error('❌ Error finding/creating folder:', error.message);
+return null;
+}
+}
+
+/**
+* Ensure service account has access to the folder
+*/
+async function ensureFolderAccess(folderId) {
+try {
+// First, try to access the folder
+await drive.files.get({
+fileId: folderId,
+fields: 'id, name, capabilities'
+});
+
+console.log('✅ Service account has access to folder');
+
+// Check if folder is already shared with your email
+await checkAndAddSharing(folderId);
+
+return true;
+} catch (error) {
+if (error.code === 404 || error.code === 403) {
+console.warn('⚠️ Service account cannot access folder directly');
+console.log('👉 To fix this:');
+console.log(`1. Open Google Drive as ${PERSONAL_EMAIL}`);
+console.log(`2. Find folder "${TARGET_FOLDER_NAME}"`);
+console.log(`3. Click "Share"`);
+console.log(`4. Add email: ${GOOGLE_SERVICE_ACCOUNT_EMAIL}`);
+console.log('5. Set permission to "Editor"');
+}
+return false;
+}
+}
+
+/**
+* Check if folder is shared with your email, if not, share it
+*/
+async function checkAndAddSharing(folderId) {
+try {
+// List current permissions
+const permissions = await drive.permissions.list({
+fileId: folderId,
+fields: 'permissions(emailAddress, role)'
+});
+
+const existingPermissions = permissions.data.permissions || [];
+const alreadyShared = existingPermissions.some(
+p => p.emailAddress === PERSONAL_EMAIL
+);
+
+if (!alreadyShared) {
+console.log(`📤 Sharing folder with ${PERSONAL_EMAIL}...`);
+await shareFolderWithEmail(folderId, PERSONAL_EMAIL, 'writer');
+} else {
+console.log(`✅ Folder already shared with ${PERSONAL_EMAIL}`);
+}
+} catch (error) {
+console.warn('⚠️ Could not check folder permissions:', error.message);
+}
+}
+
+/**
+* Share a file/folder with a specific email
+*/
+async function shareFolderWithEmail(fileId, email, role = 'writer') {
+try {
+const permission = {
+type: 'user',
+role: role,
+emailAddress: email
+};
+
+await drive.permissions.create({
+fileId: fileId,
+resource: permission,
+sendNotificationEmail: true, // Optional: send email notification
+fields: 'id'
+});
+
+console.log(`✅ Folder shared with ${email} (${role})`);
+return true;
+} catch (error) {
+console.error(`❌ Failed to share with ${email}:`, error.message);
+return false;
+}
+}
+
+/**
+* Upload file to "TaxLakay-Client Uploads" folder
+* This is the main function you'll call to upload files
+*/
+async function uploadToTaxLakayFolder(filePath, fileName = null, mimeType = null) {
+// Wait for initialization if needed
+if (!drive || !targetFolderId) {
+console.error('❌ Drive not initialized or target folder not found');
+console.log('⏳ Waiting for initialization...');
+await new Promise(resolve => setTimeout(resolve, 1000));
+
+if (!drive || !targetFolderId) {
+throw new Error('Google Drive not initialized. Please check service account credentials.');
+}
+}
+
+try {
+// Determine file name
+const finalFileName = fileName || filePath.split('/').pop();
+const finalMimeType = mimeType || getMimeType(filePath);
+
+console.log(`📤 Uploading "${finalFileName}" to "TaxLakay-Client Uploads"...`);
+
+// File metadata - CRITICAL: include parents field
+const fileMetadata = {
+name: finalFileName,
+parents: [targetFolderId] // This puts file in YOUR folder
+};
+
+const media = {
+mimeType: finalMimeType,
+body: fs.createReadStream(filePath)
+};
+
+// Upload file
+const uploadResponse = await drive.files.create({
+resource: fileMetadata,
+media: media,
+fields: 'id, name, webViewLink, webContentLink, size'
+});
+
+const uploadedFile = uploadResponse.data;
+
+console.log(`✅ File uploaded successfully!`);
+console.log(`📄 File: ${uploadedFile.name}`);
+console.log(`🆔 File ID: ${uploadedFile.id}`);
+console.log(`🔗 View link: ${uploadedFile.webViewLink}`);
+console.log(`🔗 Direct download: ${uploadedFile.webContentLink}`);
+console.log(`📁 Located in: TaxLakay-Client Uploads`);
+
+// Optional: Also share the individual file
+await shareFolderWithEmail(uploadedFile.id, PERSONAL_EMAIL, 'writer');
+
+return {
+success: true,
+fileId: uploadedFile.id,
+fileName: uploadedFile.name,
+fileLink: uploadedFile.webViewLink,
+downloadLink: uploadedFile.webContentLink,
+folderName: TARGET_FOLDER_NAME,
+folderId: targetFolderId
+};
+
+} catch (error) {
+console.error('❌ Upload failed:', error.message);
+
+// Diagnostic help
+if (error.message.includes('parents')) {
+console.error('💡 TIP: Make sure "parents" field includes the correct folder ID');
+console.error(`Current folder ID: ${targetFolderId}`);
+}
+
+if (error.message.includes('permission')) {
+console.error('🔒 Permission issue detected');
+console.error(`Share folder ${targetFolderId} with ${GOOGLE_SERVICE_ACCOUNT_EMAIL}`);
+}
+
+return {
+success: false,
+error: error.message
+};
+}
+}
+
+/**
+* Get MIME type based on file extension
+*/
+function getMimeType(filePath) {
+const extension = filePath.split('.').pop().toLowerCase();
+const mimeTypes = {
+'pdf': 'application/pdf',
+'jpg': 'image/jpeg',
+'jpeg': 'image/jpeg',
+'png': 'image/png',
+'txt': 'text/plain',
+'csv': 'text/csv',
+'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+'xls': 'application/vnd.ms-excel',
+'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+'doc': 'application/msword',
+'zip': 'application/zip'
+};
+
+return mimeTypes[extension] || 'application/octet-stream';
+}
+
+/**
+* List all files in "TaxLakay-Client Uploads"
+*/
+async function listFilesInTaxLakayFolder() {
+if (!drive || !targetFolderId) {
+console.error('❌ Drive not initialized');
+return [];
+}
+
+try {
+console.log(`📂 Listing files in "${TARGET_FOLDER_NAME}":`);
+
+const response = await drive.files.list({
+q: `'${targetFolderId}' in parents and trashed=false`,
+fields: 'files(id, name, mimeType, size, createdTime, modifiedTime)',
+orderBy: 'createdTime desc',
+pageSize: 100
+});
+
+const files = response.data.files;
+
+if (files.length === 0) {
+console.log('📭 Folder is empty');
+} else {
+files.forEach((file, index) => {
+const size = file.size ? `${(file.size / 1024).toFixed(1)} KB` : 'N/A';
+console.log(`${index + 1}. ${file.name} (${size}) - Created: ${file.createdTime}`);
+});
+}
+
+return files;
+} catch (error) {
+console.error('❌ Failed to list files:', error.message);
+return [];
+}
+}
+
+/**
+* Diagnostic function - Run this if files aren't appearing
+*/
+async function diagnoseUploadIssue() {
+console.log('🔍 Running diagnostic...\n');
+
+// Step 1: Check authentication
+console.log('1. Checking authentication...');
+if (!drive) {
+console.log('❌ Drive service not initialized');
+console.log(' Check GOOGLE_SERVICE_ACCOUNT_EMAIL and GOOGLE_PRIVATE_KEY');
+return;
+}
+console.log('✅ Drive service active\n');
+
+// Step 2: Check target folder
+console.log('2. Checking target folder...');
+if (!targetFolderId) {
+console.log('❌ Target folder ID not found');
+targetFolderId = await findOrCreateFolder(TARGET_FOLDER_NAME);
+if (!targetFolderId) {
+console.log('❌ Failed to setup folder');
+return;
+}
+}
+console.log(`✅ Target folder: ${TARGET_FOLDER_NAME} (ID: ${targetFolderId})\n`);
+
+// Step 3: Check folder access
+console.log('3. Checking folder access...');
+try {
+const folder = await drive.files.get({
+fileId: targetFolderId,
+fields: 'id, name, capabilities, permissions'
+});
+console.log(`✅ Can access folder: ${folder.data.name}`);
+console.log(`✅ Can upload files: ${folder.data.capabilities.canEdit}\n`);
+} catch (error) {
+console.log(`❌ Cannot access folder: ${error.message}`);
+console.log(`👉 Share folder with: ${GOOGLE_SERVICE_ACCOUNT_EMAIL}\n`);
+return;
+}
+
+// Step 4: List current files
+console.log('4. Listing existing files...');
+await listFilesInTaxLakayFolder();
+console.log('');
+
+// Step 5: Test upload (if you have a test file)
+console.log('5. Ready to upload files');
+console.log(' Call: uploadToTaxLakayFolder("path/to/your/file.pdf")');
+}
+
+/**
+* Quick upload function for common use cases
+*/
+async function uploadClientDocument(clientName, documentType, filePath) {
+const timestamp = new Date().toISOString().split('T')[0];
+const fileName = `${clientName}_${documentType}_${timestamp}.${filePath.split('.').pop()}`;
+
+console.log(`👤 Processing upload for ${clientName}...`);
+
+const result = await uploadToTaxLakayFolder(filePath, fileName);
+
+if (result.success) {
+console.log(`✅ Document uploaded for ${clientName}`);
+console.log(`🔗 ${result.fileLink}`);
+}
+
+return result;
+}
+
+// Export functions
+module.exports = {
+// Core functions
+uploadToTaxLakayFolder,
+listFilesInTaxLakayFolder,
+
+// Utility functions
+diagnoseUploadIssue,
+uploadClientDocument,
+
+// Getters
+getTargetFolderId: () => targetFolderId,
+getTargetFolderName: () => TARGET_FOLDER_NAME,
+
+// Initialization check
+isDriveReady: () => !!(drive && targetFolderId)
+};
 
 /* Small helpers for Drive names */
 function sanitizeName(str) {
