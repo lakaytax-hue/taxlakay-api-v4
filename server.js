@@ -478,7 +478,6 @@ console.log(' • Service account needs "Editor" permission');
 module.exports = {
 // Core functions
 initDriveService,
-uploadFile,
 uploadFileFromPath,
 
 // Folder operations
