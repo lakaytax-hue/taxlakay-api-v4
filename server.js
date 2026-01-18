@@ -361,7 +361,13 @@ try {
 const folder = await drive.files.get({
 fileId: GOOGLE_DRIVE_PARENT_FOLDER_ID,
 fields: "id,name,mimeType,createdTime,modifiedTime,capabilities",
-supports
+supportsAllDrives: true
+});
+
+console.log(`✅ Folder verified: ${folder.data.name}`);
+} catch (error) {
+console.error("❌ Cannot access folder:", error.message);
+}
  
  /* Small helpers for Drive names */
 function sanitizeName(str) {
