@@ -41,189 +41,42 @@ const BANK_SHEET_URL =
 process.env.BANK_SHEET_URL ||
 'https://script.google.com/macros/s/AKfycbxGQdl6L5V-Ik5dqDKI0yTCyhl-k6i8duZqIqN_YWa7EQm1gr7sQhzE9YU9EAEUSYQvSw/exec';
 
-/* --------------------------- Google Drive Setup (Service Account + Shared Drive) --------------------------- */
-/*
-ENV REQUIRED (Render):
-- GOOGLE_SERVICE_ACCOUNT_EMAIL = xxxx@xxxx.iam.gserviceaccount.com
-- GOOGLE_PRIVATE_KEY = -----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n
-- GOOGLE_DRIVE_PARENT_FOLDER_ID = (Folder ID INSIDE the Shared Drive)
-- GOOGLE_SHARED_DRIVE_ID = (Shared Drive ID)
+/* --------------------------- Google Drive Setup (Service Account) --------------------------- */
 
-IMPORTANT:
-1) The parent folder MUST be inside the Shared Drive.
-2) Share the Shared Drive (or at least the parent folder) with the service account as Editor.
-*/
+const GOOGLE_DRIVE_PARENT_FOLDER_ID =
+process.env.GOOGLE_DRIVE_PARENT_FOLDER_ID || "16tx8uhyrq79K481-2Ey1SZz-ScRb5EJh";
 
-const DRIVE_PARENT_FOLDER_ID = (process.env.GOOGLE_DRIVE_PARENT_FOLDER_ID || "").trim();
-const SHARED_DRIVE_ID = (process.env.GOOGLE_SHARED_DRIVE_ID || "").trim();
-const GOOGLE_SERVICE_ACCOUNT_EMAIL = (process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || "").trim();
-const GOOGLE_PRIVATE_KEY = (process.env.GOOGLE_PRIVATE_KEY || "").replace(/\\n/g, "\n").trim();
+const GOOGLE_SERVICE_ACCOUNT_EMAIL =
+process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || '';
+
+const GOOGLE_PRIVATE_KEY =
+(process.env.GOOGLE_PRIVATE_KEY || '').replace(/\\n/g, '\n');
+
 
 let drive = null;
 
-/** Initialize Drive client */
-function initDriveServiceAccount() {
+(function initDrive() {
 try {
 if (!DRIVE_PARENT_FOLDER_ID || !GOOGLE_SERVICE_ACCOUNT_EMAIL || !GOOGLE_PRIVATE_KEY) {
-console.warn("⚠️ Drive not fully configured (missing env vars). Skipping Drive uploads.");
-return null;
+console.warn('⚠️ Google Drive Service Account not fully configured. Skipping Drive uploads.');
+return;
 }
 
 const auth = new google.auth.JWT(
 GOOGLE_SERVICE_ACCOUNT_EMAIL,
 null,
 GOOGLE_PRIVATE_KEY,
-["https://www.googleapis.com/auth/drive"]
+['https://www.googleapis.com/auth/drive'] // or drive.file if you prefer
 );
 
-drive = google.drive({ version: "v3", auth });
-
-console.log("✅ Google Drive Service Account initialized");
-console.log("📁 Parent folder:", DRIVE_PARENT_FOLDER_ID);
-console.log("🗂️ Shared Drive ID:", SHARED_DRIVE_ID || "(not set)");
-return drive;
+drive = google.drive({ version: 'v3', auth });
+console.log('✅ Google Drive Service Account initialized');
+console.log('📁 Parent folder for client uploads:', DRIVE_PARENT_FOLDER_ID);
 } catch (e) {
-console.error("❌ Failed to init Drive (Service Account):", e.message);
+console.error('❌ Failed to init Google Drive (Service Account):', e.message);
 drive = null;
-return null;
 }
-}
-
-// Initialize once at startup
-initDriveServiceAccount();
-
-/** Small helpers */
-function sanitizeName(str) {
-return String(str || "").replace(/[<>:"/\\|?*]+/g, "").trim();
-}
-
-/**
-* Verify parent folder is accessible (optional but helpful)
-*/
-async function verifyParentFolder() {
-if (!drive) return false;
-
-try {
-const res = await drive.files.get({
-fileId: DRIVE_PARENT_FOLDER_ID,
-fields: "id,name,mimeType",
-supportsAllDrives: true,
-});
-
-console.log(`✅ Parent folder verified: ${res.data.name} (${res.data.id})`);
-return true;
-} catch (e) {
-console.error("❌ Cannot access parent folder:", e.message);
-console.error("👉 Fix: Put the folder INSIDE the Shared Drive + share it with the service account as Editor.");
-return false;
-}
-}
-
-/**
-* Find or create a client folder inside the parent folder
-* (Works in Shared Drives if supportsAllDrives is enabled)
-*/
-async function ensureClientFolder(ref, clientName, clientPhone) {
-if (!drive || !DRIVE_PARENT_FOLDER_ID) return null;
-
-const safeRef = sanitizeName(ref);
-const safeName = sanitizeName(clientName || "Client");
-const safePhone = sanitizeName(clientPhone || "");
-
-let folderName = `${safeRef} - ${safeName}`;
-if (safePhone) folderName += ` - ${safePhone}`;
-
-try {
-// Find folder
-const listRes = await drive.files.list({
-q: `'${DRIVE_PARENT_FOLDER_ID}' in parents and mimeType='application/vnd.google-apps.folder' and name='${folderName.replace(/'/g, "\\'")}' and trashed=false`,
-fields: "files(id,name)",
-pageSize: 1,
-supportsAllDrives: true,
-includeItemsFromAllDrives: true,
-corpora: SHARED_DRIVE_ID ? "drive" : "user",
-driveId: SHARED_DRIVE_ID || undefined,
-});
-
-if (listRes.data.files && listRes.data.files.length > 0) {
-console.log(`📁 Found existing client folder: ${folderName}`);
-return listRes.data.files[0].id;
-}
-
-// Create folder
-const createRes = await drive.files.create({
-requestBody: {
-name: folderName,
-mimeType: "application/vnd.google-apps.folder",
-parents: [DRIVE_PARENT_FOLDER_ID],
-},
-fields: "id",
-supportsAllDrives: true,
-});
-
-console.log(`📁 Created client folder: ${folderName}`);
-return createRes.data.id;
-} catch (e) {
-console.error("❌ ensureClientFolder failed:", e.message);
-return null;
-}
-}
-
-/**
-* Upload files to a folder
-*/
-async function uploadFilesToDrive(folderId, files, meta = {}) {
-if (!drive || !folderId || !Array.isArray(files) || files.length === 0) {
-console.log("📭 Skipping Drive upload - missing requirements");
-return [];
-}
-
-const uploaded = [];
-console.log(`📤 Uploading ${files.length} file(s) to folder: ${folderId}`);
-
-for (const file of files) {
-try {
-const fileName = sanitizeName(file.originalname) || "document";
-
-const fileMetadata = {
-name: fileName,
-parents: [folderId],
-description: `TaxLakay upload — Ref: ${meta.ref || ""}, Name: ${meta.clientName || ""}, Email: ${meta.clientEmail || ""}`,
-};
-
-const media = {
-mimeType: file.mimetype,
-body: Buffer.isBuffer(file.buffer)
-? require("stream").Readable.from(file.buffer)
-: file.buffer,
-};
-
-const res = await drive.files.create({
-requestBody: fileMetadata,
-media,
-fields: "id,name,webViewLink",
-supportsAllDrives: true,
-});
-
-console.log(`✅ Uploaded: ${res.data.name} (${res.data.id})`);
-uploaded.push(res.data);
-} catch (e) {
-console.error(`❌ Upload failed for ${file.originalname}:`, e.message);
-console.error("👉 If you see 'Service Accounts do not have storage quota', you MUST use a Shared Drive and upload inside it.");
-}
-}
-
-return uploaded;
-}
-
-/* Export helpers */
-module.exports = {
-drive,
-verifyParentFolder,
-ensureClientFolder,
-uploadFilesToDrive,
-sanitizeName,
-};
+})();
 
 /* Small helpers for Drive names */
 function sanitizeName(str) {
