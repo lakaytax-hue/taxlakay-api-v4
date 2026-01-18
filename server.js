@@ -46,9 +46,6 @@ process.env.BANK_SHEET_URL ||
 npm i googleapis
 */
 
-const { google } = require("googleapis");
-const path = require("path");
-const fs = require("fs");
 
 // ✅ ENV
 const DRIVE_PARENT_FOLDER_ID_RAW = process.env.GOOGLE_DRIVE_PARENT_FOLDER_ID || "";
