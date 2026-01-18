@@ -43,10 +43,6 @@ process.env.BANK_SHEET_URL ||
 
 /* --------------------------- Google Drive Service (Option A) --------------------------- */
 
-const fs = require('fs');
-const path = require('path');
-const { google } = require('googleapis');
-
 // Configuration from environment
 const GOOGLE_SERVICE_ACCOUNT_EMAIL = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || '';
 const GOOGLE_PRIVATE_KEY = (process.env.GOOGLE_PRIVATE_KEY || '').replace(/\\n/g, '\n');
