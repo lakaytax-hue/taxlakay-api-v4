@@ -40,68 +40,42 @@ const PRIVATE_SHEET_URL =
 const BANK_SHEET_URL =
 process.env.BANK_SHEET_URL ||
 'https://script.google.com/macros/s/AKfycbxGQdl6L5V-Ik5dqDKI0yTCyhl-k6i8duZqIqN_YWa7EQm1gr7sQhzE9YU9EAEUSYQvSw/exec';
+/* --------------------------- Google Drive Setup (Service Account) --------------------------- */
 
-/* --------------------------- Google Drive Service (Option A) --------------------------- */
+const DRIVE_PARENT_FOLDER_ID =
+process.env.GOOGLE_DRIVE_PARENT_FOLDER_ID || '';
 
-// Configuration from environment
-const GOOGLE_SERVICE_ACCOUNT_EMAIL = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || '';
-const GOOGLE_PRIVATE_KEY = (process.env.GOOGLE_PRIVATE_KEY || '').replace(/\\n/g, '\n');
-const GOOGLE_DRIVE_PARENT_FOLDER_ID = process.env.GOOGLE_DRIVE_PARENT_FOLDER_ID || '';
-const PERSONAL_EMAIL = process.env.PERSONAL_EMAIL || 'lakaytax@gmail.com';
-const TARGET_FOLDER_NAME = process.env.TARGET_FOLDER_NAME || 'TaxLakay-Client Uploads';
+const GOOGLE_SERVICE_ACCOUNT_EMAIL =
+process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || '';
+
+const GOOGLE_PRIVATE_KEY =
+(process.env.GOOGLE_PRIVATE_KEY || '').replace(/\\n/g, '\n');
 
 let drive = null;
-let isInitialized = false;
 
-/**
-* Initialize Google Drive Service Account
-*/
-async function initDriveService() {
+(function initDrive() {
 try {
-// Check required environment variables
-if (!GOOGLE_SERVICE_ACCOUNT_EMAIL || !GOOGLE_PRIVATE_KEY) {
-console.warn('⚠️ Google Drive Service Account credentials missing');
-return false;
+if (!DRIVE_PARENT_FOLDER_ID || !GOOGLE_SERVICE_ACCOUNT_EMAIL || !GOOGLE_PRIVATE_KEY) {
+console.warn('⚠️ Google Drive Service Account not fully configured. Skipping Drive uploads.');
+return;
 }
 
-if (!GOOGLE_DRIVE_PARENT_FOLDER_ID) {
-console.warn('⚠️ GOOGLE_DRIVE_PARENT_FOLDER_ID not set');
-console.log('👉 Set it in .env file or create folder with: node create-folder.js');
-return false;
-}
-
-// Create JWT auth client
 const auth = new google.auth.JWT(
 GOOGLE_SERVICE_ACCOUNT_EMAIL,
 null,
 GOOGLE_PRIVATE_KEY,
-['https://www.googleapis.com/auth/drive']
+['https://www.googleapis.com/auth/drive'] // or drive.file if you prefer
 );
 
-// Initialize drive client
 drive = google.drive({ version: 'v3', auth });
-
-// Test connection by verifying folder exists
-const folderExists = await verifyFolderExists();
-
-if (folderExists) {
-isInitialized = true;
-console.log('✅ Google Drive Service initialized successfully');
-console.log(`📁 Using folder: ${TARGET_FOLDER_NAME}`);
-console.log(`📁 Folder ID: ${GOOGLE_DRIVE_PARENT_FOLDER_ID}`);
-console.log(`📧 Files will be shared with: ${PERSONAL_EMAIL}`);
-} else {
-console.error('❌ Failed to access folder. Check sharing permissions.');
-console.log(`👉 Share folder ${GOOGLE_DRIVE_PARENT_FOLDER_ID} with ${GOOGLE_SERVICE_ACCOUNT_EMAIL}`);
+console.log('✅ Google Drive Service Account initialized');
+console.log('📁 Parent folder for client uploads:', DRIVE_PARENT_FOLDER_ID);
+} catch (e) {
+console.error('❌ Failed to init Google Drive (Service Account):', e.message);
+drive = null;
 }
+})();
 
-return isInitialized;
-
-} catch (error) {
-console.error('❌ Failed to initialize Google Drive:', error.message);
-return false;
-}
-}
 
 /**
 * Verify the folder exists and is accessible
