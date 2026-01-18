@@ -51,23 +51,20 @@ OPTIONAL ENV VARS:
 - GOOGLE_SHARED_DRIVE_ID (only if parent folder is inside a Shared Drive)
 - PERSONAL_EMAIL (to share files/folders with you)
 -------------------------------------------------------------------------------------------- */
-
-
-
 const TARGET_FOLDER_NAME = "TaxLakay-Client Uploads";
 
 // ✅ IMPORTANT: Folder ID should be ONLY the ID (no ?dmr, no /folders/, no full URL)
 const GOOGLE_DRIVE_PARENT_FOLDER_ID =
 process.env.GOOGLE_DRIVE_PARENT_FOLDER_ID || "16tx8uhyrq79K481-2Ey1SZz-ScRb5EJh";
 
-const GOOGLE_SERVICE_ACCOUNT_EMAIL = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || "";
+const GOOGLE_SERVICE_ACCOUNT_EMAIL = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL ||";
 const GOOGLE_PRIVATE_KEY = (process.env.GOOGLE_PRIVATE_KEY || "").replace(/\\n/g, "\n");
 
 // If you use a Shared Drive, set this (otherwise leave blank)
-const GOOGLE_SHARED_DRIVE_ID = process.env.GOOGLE_SHARED_DRIVE_ID || "";
+const GOOGLE_SHARED_DRIVE_ID = process.env.GOOGLE_SHARED_DRIVE_ID ||";
 
 // Your personal email (optional) to auto-share uploads
-const PERSONAL_EMAIL = process.env.PERSONAL_EMAIL || "";
+const PERSONAL_EMAIL = process.env.PERSONAL_EMAIL ||";
 
 let drive = null;
 let isInitialized = false;
