@@ -52,7 +52,10 @@ process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || '';
 const GOOGLE_PRIVATE_KEY =
 (process.env.GOOGLE_PRIVATE_KEY || '').replace(/\\n/g, '\n');
 
-const SHARED_DRIVE_ID = process.env.GOOGLE_SHARED_DRIVE_ID || '';let drive = null;
+const SHARED_DRIVE_ID = process.env.GOOGLE_SHARED_DRIVE_ID || '';
+
+let drive = null;
+let targetFolderId = null;
 
 /**
 * Initialize Google Drive with Shared Drive support
