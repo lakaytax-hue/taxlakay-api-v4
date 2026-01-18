@@ -68,14 +68,30 @@ GOOGLE_PRIVATE_KEY,
 ['https://www.googleapis.com/auth/drive'] // or drive.file if you prefer
 );
 
+// Initialize drive client
 drive = google.drive({ version: 'v3', auth });
-console.log('✅ Google Drive Service Account initialized');
-console.log('📁 Parent folder for client uploads:', DRIVE_PARENT_FOLDER_ID);
-} catch (e) {
-console.error('❌ Failed to init Google Drive (Service Account):', e.message);
-drive = null;
+
+// Test connection by verifying folder exists
+const folderExists = await verifyFolderExists();
+
+if (folderExists) {
+isInitialized = true;
+console.log('✅ Google Drive Service initialized successfully');
+console.log(`📁 Using folder: ${TARGET_FOLDER_NAME}`);
+console.log(`📁 Folder ID: ${GOOGLE_DRIVE_PARENT_FOLDER_ID}`);
+console.log(`📧 Files will be shared with: ${PERSONAL_EMAIL}`);
+} else {
+console.error('❌ Failed to access folder. Check sharing permissions.');
+console.log(`👉 Share folder ${GOOGLE_DRIVE_PARENT_FOLDER_ID} with ${GOOGLE_SERVICE_ACCOUNT_EMAIL}`);
 }
-})();
+
+return isInitialized;
+
+} catch (error) {
+console.error('❌ Failed to initialize Google Drive:', error.message);
+return false;
+}
+}
 
 /**
 * Verify the folder exists and is accessible
