@@ -26,6 +26,13 @@ console.log(
 (process.env.USPS_USER_ID || "").length
 );
 
+/* --------------------------- GOOGLE OAUTH SETUP --------------------------- */
+
+const oauth2Client = new google.auth.OAuth2(
+process.env.GOOGLE_OAUTH_CLIENT_ID,
+process.env.GOOGLE_OAUTH_CLIENT_SECRET,
+process.env.GOOGLE_OAUTH_REDIRECT_URI
+);
 
 /* --------------------------- GOOGLE APPS SCRIPTS -------------------------- */
 /** MAIN UPLOAD LOG (Tax Lakay - Upload Log) */
@@ -41,38 +48,49 @@ const BANK_SHEET_URL =
 process.env.BANK_SHEET_URL ||
 'https://script.google.com/macros/s/AKfycbxGQdl6L5V-Ik5dqDKI0yTCyhl-k6i8duZqIqN_YWa7EQm1gr7sQhzE9YU9EAEUSYQvSw/exec';
 
-/* --------------------------- Google Drive Setup (Service Account) --------------------------- */
+/* --------------------------- Google Drive Setup (OAuth) --------------------------- */
 
 const DRIVE_PARENT_FOLDER_ID =
-process.env.GOOGLE_DRIVE_PARENT_FOLDER_ID || '';
+process.env.GOOGLE_DRIVE_PARENT_FOLDER_ID || '16tx8uhyrq79K481-2Ey1SZz-ScRb5EJh';
 
-const GOOGLE_SERVICE_ACCOUNT_EMAIL =
-process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || '';
-
-const GOOGLE_PRIVATE_KEY =
-(process.env.GOOGLE_PRIVATE_KEY || '').replace(/\\n/g, '\n');
+// OAuth2 env vars (all of these must exist in Render)
+const GOOGLE_OAUTH_CLIENT_ID = process.env.GOOGLE_OAUTH_CLIENT_ID || '';
+const GOOGLE_OAUTH_CLIENT_SECRET = process.env.GOOGLE_OAUTH_CLIENT_SECRET || '';
+const GOOGLE_OAUTH_REDIRECT_URI =
+process.env.GOOGLE_OAUTH_REDIRECT_URI || 'http://localhost:3000/oauth2callback';
+const GOOGLE_REFRESH_TOKEN = process.env.GOOGLE_REFRESH_TOKEN || '';
 
 let drive = null;
 
 (function initDrive() {
 try {
-if (!DRIVE_PARENT_FOLDER_ID || !GOOGLE_SERVICE_ACCOUNT_EMAIL || !GOOGLE_PRIVATE_KEY) {
-console.warn('⚠️ Google Drive Service Account not fully configured. Skipping Drive uploads.');
+if (
+!GOOGLE_OAUTH_CLIENT_ID ||
+!GOOGLE_OAUTH_CLIENT_SECRET ||
+!GOOGLE_REFRESH_TOKEN ||
+!DRIVE_PARENT_FOLDER_ID
+) {
+console.warn('⚠️ Google Drive OAuth not fully configured. Skipping Drive uploads.');
 return;
 }
 
-const auth = new google.auth.JWT(
-GOOGLE_SERVICE_ACCOUNT_EMAIL,
-null,
-GOOGLE_PRIVATE_KEY,
-['https://www.googleapis.com/auth/drive'] // or drive.file if you prefer
+// OAuth2 client for lakaytax@gmail.com (NOT service account)
+const oauth2Client = new google.auth.OAuth2(
+GOOGLE_OAUTH_CLIENT_ID,
+GOOGLE_OAUTH_CLIENT_SECRET,
+GOOGLE_OAUTH_REDIRECT_URI
 );
 
-drive = google.drive({ version: 'v3', auth });
-console.log('✅ Google Drive Service Account initialized');
+// Use the refresh token you generated with get-refresh-token.js
+oauth2Client.setCredentials({
+refresh_token: GOOGLE_REFRESH_TOKEN.trim(),
+});
+
+drive = google.drive({ version: 'v3', auth: oauth2Client });
+console.log('✅ Google Drive OAuth client initialized (lakaytax@gmail.com)');
 console.log('📁 Parent folder for client uploads:', DRIVE_PARENT_FOLDER_ID);
 } catch (e) {
-console.error('❌ Failed to init Google Drive (Service Account):', e.message);
+console.error('❌ Failed to init Google Drive client:', e);
 drive = null;
 }
 })();
