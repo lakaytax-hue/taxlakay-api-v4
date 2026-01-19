@@ -565,8 +565,31 @@ clientMessage,
 SEND_CLIENT_RECEIPT,
 clientLanguage,
 cashAdvance, // NEW
-refundMethod // NEW
+refundMethod, // NEW
+
+// ✅ NEW (Filing Status)
+filingStatus,
+spouseName
 } = req.body;
+
+// ✅ Filing Status required
+const filingStatusClean = String(filingStatus || '').trim();
+if (!filingStatusClean) {
+return res.status(400).json({ ok: false, error: 'Filing status is required.' });
+}
+
+// ✅ Spouse required only if married
+const married =
+filingStatusClean === 'Married Filing Jointly' ||
+filingStatusClean === 'Married Filing Separately';
+
+const spouseNameClean = String(spouseName || '').trim();
+if (married && !spouseNameClean) {
+return res.status(400).json({
+ok: false,
+error: 'Spouse name is required when filing status is married.'
+});
+}
 
 const lang = ['en', 'es', 'ht'].includes((clientLanguage || '').toLowerCase())
 ? clientLanguage.toLowerCase()
@@ -587,7 +610,7 @@ uploadUspsSuggestion = await verifyAddressWithUSPS(addressForUsps);
 } catch (e) {
 console.error('❌ USPS validation for upload form failed:', e);
 }
- 
+
 /* === Google Drive upload (non-blocking on failure) ==================== */
 try {
 const folderId = await ensureClientFolder(referenceNumber, clientName, clientPhone);
@@ -603,6 +626,7 @@ console.warn(`⚠️ No Drive folder created for ref ${referenceNumber}`);
 } catch (e) {
 console.error('❌ Drive upload block failed:', e);
 }
+
 /* === Upload Log → Apps Script (WORKING + MATCHES SCRIPT) =================== */
 if (UPLOAD_SHEET_URL) {
 try {
@@ -618,12 +642,17 @@ referenceId: referenceNumber, // Reference ID
 clientName: clientName || "", // Client Name
 clientEmail: clientEmail || "", // Client Email
 clientPhone: clientPhone || "", // Client Phone
-service: serviceValue, // 👈 THIS is what Apps Script reads
+service: serviceValue, // Service
 returnType: returnType || "", // Return Type
 dependents: dependents || "", // Dependents
 cashAdvance: cashAdvance || "", // CashAdvance
 refundMethod: refundMethod || "", // RefundMethod
 currentAddress: currentAddress || clientAddress || "",
+
+// ✅ NEW columns
+filingStatus: filingStatusClean,
+spouseName: married ? spouseNameClean : "",
+
 filesCount: (req.files || []).length, // Files count
 fileNames: (req.files || []).map(f => f.originalname).join(", "), // Files
 source: "Upload Form", // Source
@@ -652,6 +681,7 @@ console.error("❌ Failed calling Upload Sheet logger:", e);
 } else {
 console.warn("⚠️ UPLOAD_SHEET_URL not set; skipping sheet log.");
 }
+
 const transporter = createTransporter();
 
 /* ---------------- Email to YOU (admin) ---------------- */
