@@ -43,15 +43,14 @@ process.env.BANK_SHEET_URL ||
 
 /* --------------------------- Google Drive Setup (Service Account) --------------------------- */
 
-const GOOGLE_DRIVE_PARENT_FOLDER_ID =
-process.env.GOOGLE_DRIVE_PARENT_FOLDER_ID || "16tx8uhyrq79K481-2Ey1SZz-ScRb5EJh";
+const DRIVE_PARENT_FOLDER_ID =
+process.env.GOOGLE_DRIVE_PARENT_FOLDER_ID || '';
 
 const GOOGLE_SERVICE_ACCOUNT_EMAIL =
 process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || '';
 
 const GOOGLE_PRIVATE_KEY =
 (process.env.GOOGLE_PRIVATE_KEY || '').replace(/\\n/g, '\n');
-
 
 let drive = null;
 
