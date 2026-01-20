@@ -557,6 +557,8 @@ const {
 clientName,
 clientEmail,
 clientPhone,
+clientFilingStatus,
+clientSpouseName,
 clientAddress, // legacy field
 currentAddress, // NEW preferred field
 returnType,
@@ -642,6 +644,8 @@ referenceId: referenceNumber, // Reference ID
 clientName: clientName || "", // Client Name
 clientEmail: clientEmail || "", // Client Email
 clientPhone: clientPhone || "", // Client Phone
+clientFilingStatus: clientFilingStatus || "", // Client Filing Status
+clientSpouseName: clientSpouseName || "", // Client Spouse Name
 service: serviceValue, // Service
 returnType: returnType || "", // Return Type
 dependents: dependents || "", // Dependents
