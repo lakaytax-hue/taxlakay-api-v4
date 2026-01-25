@@ -37,7 +37,7 @@ process.env.GOOGLE_OAUTH_REDIRECT_URI
 /* --------------------------- GOOGLE APPS SCRIPTS -------------------------- */
 /** MAIN UPLOAD LOG (Tax Lakay - Upload Log) */
 const UPLOAD_SHEET_URL =
-'https://script.google.com/macros/s/AKfycbxjqR85WdU2uVFhTG5PHko_NdPce1RZORZyZxrFaoTKfBuLwHpWugZKslWqJ3lxESSI/exec';
+'https://script.google.com/macros/s/AKfycbz7jpQkIy-xcx9RFjXMRs-dNDAfkKaTIQDoCbN-az4vvlpg2ITJVpHWWTCxOTgsW6J5/exec';
 
 /** PRIVATE SSN LOGGER (Social Security - Upload Log) */
 const PRIVATE_SHEET_URL =
