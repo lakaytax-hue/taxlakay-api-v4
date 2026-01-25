@@ -552,30 +552,28 @@ console.log('Body:', req.body);
 if (!req.files || req.files.length === 0) {
 return res.status(400).json({ ok: false, error: 'No files uploaded' });
 }
-
 const {
 clientName,
 clientEmail,
 clientPhone,
-clientDateofBirth,
-clientJobPosition
 clientFilingStatus,
 clientSpouseName,
-clientAddress, // legacy field
-currentAddress, // NEW preferred field
+clientAddress,
+currentAddress,
 returnType,
 dependents,
 clientMessage,
 SEND_CLIENT_RECEIPT,
 clientLanguage,
-cashAdvance, // NEW
-refundMethod, // NEW
+cashAdvance,
+refundMethod,
 
-// ✅ NEW (Filing Status)
 filingStatus,
-spouseName
-} = req.body;
+spouseName,
 
+dateOfBirth,
+jobPosition
+} = req.body;
 // ✅ Filing Status required
 const filingStatusClean = String(filingStatus || '').trim();
 if (!filingStatusClean) {
@@ -718,11 +716,12 @@ clientPhone
 ? `<a href="tel:${clientPhone.replace(/[^0-9+]/g, '')}">${clientPhone}</a>`
 : 'Not provided'
 }</p>
-<!-- ✅ NEW admin fields -->
+// ✅ NEW admin fields (HTML snippet) — SAFE
+const adminAdminFieldsHtml = `
 <p><strong>Date of Birth:</strong> ${dateOfBirthClean || 'Not provided'}</p>
 <p><strong>Job Position:</strong> ${jobPositionClean || 'Not provided'}</p>
 <p><strong>Filing Status:</strong> ${filingStatusClean || 'Not provided'}</p>
-${married ? `<p><strong>Spouse Name:</strong> ${spouseNameClean || 'Not provided'}</p>` : ''}
+${married ? `<p><strong>Spouse Name:</strong> ${spouseNameClean || 'Not provided'}</p>` : ''}`;
 <p><strong>Return Type:</strong> ${returnType || 'Not specified'}</p>
 <p><strong>Dependents:</strong> ${dependents || '0'}</p>
 <p><strong>Address (client):</strong> ${currentAddress || clientAddress || 'Not provided'}</p>
