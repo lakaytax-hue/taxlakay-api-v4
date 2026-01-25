@@ -898,10 +898,7 @@ clientEmailOptions.subject =
 }
 
 try {
-transporter
-.sendMail(clientEmailOptions)
-.then(() => console.log('✅ Client email sent'))
-.catch(e => console.error('❌ Failed sending client email:', e));
+await transporter.sendMail(clientEmailOptions);
 clientEmailSent = true;
 console.log('✅ Client confirmation email sent to:', clientEmail);
 console.log('📎 Files attached:', sendClientReceipt);
