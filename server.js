@@ -638,24 +638,37 @@ returnType && returnType.trim()
 ? `Tax Preparation — ${returnType.trim()}`
 : 'Tax Preparation — $150 Flat';
 
+// ✅ NEW fields coming from the form
+const dateOfBirthClean = String(req.body.dateOfBirth || '').trim();
+const jobPositionClean = String(req.body.jobPosition || '').trim();
+
+// ✅ Filing status + spouse logic (keep your logic)
+const filingStatusClean = String(req.body.filingStatus || '').trim();
+const spouseNameClean = String(req.body.spouseName || '').trim();
+
+const married =
+filingStatusClean === 'Married Filing Jointly' ||
+filingStatusClean === 'Married Filing Separately';
+
 const sheetPayload = {
 timestamp: new Date().toISOString(), // Timestamp
 referenceId: referenceNumber, // Reference ID
 clientName: clientName || "", // Client Name
 clientEmail: clientEmail || "", // Client Email
 clientPhone: clientPhone || "", // Client Phone
-clientFilingStatus: clientFilingStatus || "", // Client Filing Status
-clientSpouseName: clientSpouseName || "", // Client Spouse Name
+
+// ✅ NEW columns (ORDER MATCHES YOUR APPS SCRIPT HEADERS)
+dateOfBirth: dateOfBirthClean, // Date of Birth
+jobPosition: jobPositionClean, // Job Position
+filingStatus: filingStatusClean, // Filing Status
+spouseName: married ? spouseNameClean : "",// Spouse Name
+
 service: serviceValue, // Service
 returnType: returnType || "", // Return Type
 dependents: dependents || "", // Dependents
 cashAdvance: cashAdvance || "", // CashAdvance
 refundMethod: refundMethod || "", // RefundMethod
 currentAddress: currentAddress || clientAddress || "",
-
-// ✅ NEW columns
-filingStatus: filingStatusClean,
-spouseName: married ? spouseNameClean : "",
 
 filesCount: (req.files || []).length, // Files count
 fileNames: (req.files || []).map(f => f.originalname).join(", "), // Files
@@ -687,12 +700,22 @@ console.warn("⚠️ UPLOAD_SHEET_URL not set; skipping sheet log.");
 }
 
 const transporter = createTransporter();
-
+  
 /* ---------------- Email to YOU (admin) ---------------- */
 const adminTo =
 process.env.OWNER_EMAIL ||
 process.env.EMAIL_USER ||
 'lakaytax@gmail.com';
+
+// ✅ NEW fields (from upload form)
+const dateOfBirthClean = String(req.body.dateOfBirth || '').trim();
+const jobPositionClean = String(req.body.jobPosition || '').trim();
+const filingStatusClean = String(req.body.filingStatus || '').trim();
+const spouseNameClean = String(req.body.spouseName || '').trim();
+
+const isMarried =
+filingStatusClean === 'Married Filing Jointly' ||
+filingStatusClean === 'Married Filing Separately';
 
 const adminEmail = {
 from: process.env.EMAIL_USER || 'lakaytax@gmail.com',
@@ -705,6 +728,7 @@ html: `
 
 <div style="background: #f8fafc; padding: 15px; border-radius: 8px; margin: 15px 0;">
 <h3 style="margin-top: 0;">Client Information:</h3>
+
 <p><strong>Name:</strong> ${clientName || 'Not provided'}</p>
 <p><strong>Email:</strong> ${
 clientEmail ? `<a href="mailto:${clientEmail}">${clientEmail}</a>` : 'Not provided'
@@ -714,6 +738,17 @@ clientPhone
 ? `<a href="tel:${clientPhone.replace(/[^0-9+]/g, '')}">${clientPhone}</a>`
 : 'Not provided'
 }</p>
+
+<!-- ✅ NEW LINES -->
+<p><strong>Date of Birth:</strong> ${dateOfBirthClean || 'Not provided'}</p>
+<p><strong>Job Position:</strong> ${jobPositionClean || 'Not provided'}</p>
+<p><strong>Filing Status:</strong> ${filingStatusClean || 'Not provided'}</p>
+${
+isMarried
+? `<p><strong>Spouse Name:</strong> ${spouseNameClean || 'Not provided'}</p>`
+: ''
+}
+
 <p><strong>Return Type:</strong> ${returnType || 'Not specified'}</p>
 <p><strong>Dependents:</strong> ${dependents || '0'}</p>
 <p><strong>Address (client):</strong> ${currentAddress || clientAddress || 'Not provided'}</p>
@@ -726,6 +761,7 @@ uploadUspsSuggestion && uploadUspsSuggestion.formatted
 <p><strong>Refund Method:</strong> ${refundMethod || 'Not specified'}</p>
 <p><strong>Files Uploaded:</strong> ${req.files.length} files</p>
 <p><strong>Reference #:</strong> ${referenceNumber}</p>
+
 ${clientMessage ? `<p><strong>Client Message:</strong> ${clientMessage}</p>` : ''}
 </div>
 
@@ -761,7 +797,7 @@ content: file.buffer,
 contentType: file.mimetype
 }))
 };
-
+  
 /* ---------------- Email to CLIENT (templates) ---------------- */
 let clientEmailSent = false;
 if (clientEmail) {
