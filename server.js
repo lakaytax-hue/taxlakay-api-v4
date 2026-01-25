@@ -910,9 +910,10 @@ console.error('❌ Failed to send client email:', emailError);
 }
 }
 
-await transporter.sendMail(adminEmail);
-console.log('✅ Admin notification email sent to', adminTo);
-
+transporter
+.sendMail(adminEmail)
+.then(() => console.log('✅ Admin notification email sent to', adminTo))
+.catch(e => console.error('❌ Failed sending admin email:', e));
 /* ------------- CSV log append ------------- */
 try {
 const ref = referenceNumber;
