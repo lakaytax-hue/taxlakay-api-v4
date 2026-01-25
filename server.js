@@ -559,24 +559,26 @@ clientEmail,
 clientPhone,
 clientFilingStatus,
 clientSpouseName,
-clientAddress,
-currentAddress,
+clientAddress, // legacy field
+currentAddress, // NEW preferred field
 returnType,
 dependents,
 clientMessage,
 SEND_CLIENT_RECEIPT,
 clientLanguage,
-cashAdvance,
-refundMethod,
+cashAdvance, // NEW
+refundMethod, // NEW
 
+// ✅ NEW (Filing Status)
 filingStatus,
 spouseName,
 
+// ✅ NEW (DOB + Job)
 dateOfBirth,
 jobPosition
 } = req.body;
 
-// ✅ Clean extra fields (for admin email + sheet)
+// ✅ Clean new fields
 const dateOfBirthClean = String(dateOfBirth || '').trim();
 const jobPositionClean = String(jobPosition || '').trim();
 
@@ -651,13 +653,13 @@ clientName: clientName || "", // Client Name
 clientEmail: clientEmail || "", // Client Email
 clientPhone: clientPhone || "", // Client Phone
 
-// ✅ Use the NEW fields you actually receive
+// ✅ NEW columns (DOB + Job)
 clientDateofBirth: dateOfBirthClean || "", // Client DateofBirth
 clientJobPosition: jobPositionClean || "", // Client JobPosition
 
-// legacy fields still supported
-clientFilingStatus: clientFilingStatus || "", // Client Filing Status (legacy)
-clientSpouseName: clientSpouseName || "", // Client Spouse Name (legacy)
+// legacy fields kept (don’t break your sheet)
+clientFilingStatus: clientFilingStatus || "", // Client Filing Status
+clientSpouseName: clientSpouseName || "", // Client Spouse Name
 
 service: serviceValue, // Service
 returnType: returnType || "", // Return Type
@@ -666,7 +668,7 @@ cashAdvance: cashAdvance || "", // CashAdvance
 refundMethod: refundMethod || "", // RefundMethod
 currentAddress: currentAddress || clientAddress || "",
 
-// ✅ NEW columns
+// ✅ NEW columns (Filing Status + Spouse)
 filingStatus: filingStatusClean,
 spouseName: married ? spouseNameClean : "",
 
@@ -707,14 +709,6 @@ process.env.OWNER_EMAIL ||
 process.env.EMAIL_USER ||
 'lakaytax@gmail.com';
 
-// ✅ NEW admin fields (HTML snippet) — MUST be a template string (backticks)
-const adminAdminFieldsHtml = `
-<p><strong>Date of Birth:</strong> ${dateOfBirthClean || 'Not provided'}</p>
-<p><strong>Job Position:</strong> ${jobPositionClean || 'Not provided'}</p>
-<p><strong>Filing Status:</strong> ${filingStatusClean || 'Not provided'}</p>
-${married ? `<p><strong>Spouse Name:</strong> ${spouseNameClean || 'Not provided'}</p>` : ''}
-`.trim();
-
 const adminEmail = {
 from: process.env.EMAIL_USER || 'lakaytax@gmail.com',
 to: adminTo,
@@ -726,20 +720,23 @@ html: `
 
 <div style="background: #f8fafc; padding: 15px; border-radius: 8px; margin: 15px 0;">
 <h3 style="margin-top: 0;">Client Information:</h3>
-
 <p><strong>Name:</strong> ${clientName || 'Not provided'}</p>
-
 <p><strong>Email:</strong> ${
 clientEmail ? `<a href="mailto:${clientEmail}">${clientEmail}</a>` : 'Not provided'
 }</p>
-
 <p><strong>Phone:</strong> ${
 clientPhone
 ? `<a href="tel:${clientPhone.replace(/[^0-9+]/g, '')}">${clientPhone}</a>`
 : 'Not provided'
 }</p>
 
-${adminAdminFieldsHtml}
+<!-- ✅ NEW admin fields -->
+<p><strong>Date of Birth:</strong> ${dateOfBirthClean || 'Not provided'}</p>
+<p><strong>Job Position:</strong> ${jobPositionClean || 'Not provided'}</p>
+
+<!-- ✅ Filing Status -->
+<p><strong>Filing Status:</strong> ${filingStatusClean || 'Not provided'}</p>
+${married ? `<p><strong>Spouse Name:</strong> ${spouseNameClean || 'Not provided'}</p>` : ''}
 
 <p><strong>Return Type:</strong> ${returnType || 'Not specified'}</p>
 <p><strong>Dependents:</strong> ${dependents || '0'}</p>
@@ -764,8 +761,7 @@ ${clientMessage ? `<p><strong>Client Message:</strong> ${clientMessage}</p>` : '
 ${
 (req.files || [])
 .map(
-file =>
-`<li>${file.originalname} (${(file.size / 1024 / 1024).toFixed(2)} MB)</li>`
+file => `<li>${file.originalname} (${(file.size / 1024 / 1024).toFixed(2)} MB)</li>`
 )
 .join('')
 }
@@ -777,7 +773,6 @@ Uploaded at: ${new Date().toLocaleString()}
 </p>
 
 <hr style="border:none;border-top:1px solid #e5e7eb;margin:16px 0;">
-
 <p style="font-size:13px;color:#475569;margin:0;">
 📧 <a href="mailto:lakaytax@gmail.com">lakaytax@gmail.com</a> &nbsp;|&nbsp;
 📞 <a href="tel:18639344823">(863) 934-4823</a> &nbsp;|&nbsp;
@@ -792,7 +787,7 @@ contentType: file.mimetype
 }))
 };
 
-// ✅ send admin email
+// ✅ Send admin email (inside this async route, so await is valid)
 try {
 await transporter.sendMail(adminEmail);
 console.log('✅ Admin email sent');
@@ -800,10 +795,10 @@ console.log('✅ Admin email sent');
 console.error('❌ Failed sending admin email:', e);
 }
 
-// (Keep your client receipt logic below exactly how you already have it)
-// ...
-return res.json({ ok: true, referenceNumber });
+// (Keep your existing client receipt logic exactly as you already have it)
+// if (sendClientReceipt) { ... await transporter.sendMail(clientEmailOptions) ... }
 
+return res.json({ ok: true, referenceNumber });
 } catch (err) {
 console.error('❌ Upload API failed:', err);
 return res.status(500).json({ ok: false, error: 'Server error' });
