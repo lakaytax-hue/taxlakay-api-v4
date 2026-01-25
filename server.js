@@ -552,6 +552,7 @@ console.log('Body:', req.body);
 if (!req.files || req.files.length === 0) {
 return res.status(400).json({ ok: false, error: 'No files uploaded' });
 }
+
 const {
 clientName,
 clientEmail,
@@ -574,6 +575,11 @@ spouseName,
 dateOfBirth,
 jobPosition
 } = req.body;
+
+// ✅ Clean extra fields (for admin email + sheet)
+const dateOfBirthClean = String(dateOfBirth || '').trim();
+const jobPositionClean = String(jobPosition || '').trim();
+
 // ✅ Filing Status required
 const filingStatusClean = String(filingStatus || '').trim();
 if (!filingStatusClean) {
@@ -644,10 +650,15 @@ referenceId: referenceNumber, // Reference ID
 clientName: clientName || "", // Client Name
 clientEmail: clientEmail || "", // Client Email
 clientPhone: clientPhone || "", // Client Phone
-clientDateofBirth: clientDateofBirth || "", // Client DateofBirth
-clientJobPosition: clientJobPosition || "", // Client JobPosition
-clientFilingStatus: clientFilingStatus || "", // Client Filing Status
-clientSpouseName: clientSpouseName || "", // Client Spouse Name
+
+// ✅ Use the NEW fields you actually receive
+clientDateofBirth: dateOfBirthClean || "", // Client DateofBirth
+clientJobPosition: jobPositionClean || "", // Client JobPosition
+
+// legacy fields still supported
+clientFilingStatus: clientFilingStatus || "", // Client Filing Status (legacy)
+clientSpouseName: clientSpouseName || "", // Client Spouse Name (legacy)
+
 service: serviceValue, // Service
 returnType: returnType || "", // Return Type
 dependents: dependents || "", // Dependents
@@ -690,11 +701,19 @@ console.warn("⚠️ UPLOAD_SHEET_URL not set; skipping sheet log.");
 
 const transporter = createTransporter();
 
-  /* ---------------- Email to YOU (admin) ---------------- */
+/* ---------------- Email to YOU (admin) ---------------- */
 const adminTo =
 process.env.OWNER_EMAIL ||
 process.env.EMAIL_USER ||
 'lakaytax@gmail.com';
+
+// ✅ NEW admin fields (HTML snippet) — MUST be a template string (backticks)
+const adminAdminFieldsHtml = `
+<p><strong>Date of Birth:</strong> ${dateOfBirthClean || 'Not provided'}</p>
+<p><strong>Job Position:</strong> ${jobPositionClean || 'Not provided'}</p>
+<p><strong>Filing Status:</strong> ${filingStatusClean || 'Not provided'}</p>
+${married ? `<p><strong>Spouse Name:</strong> ${spouseNameClean || 'Not provided'}</p>` : ''}
+`.trim();
 
 const adminEmail = {
 from: process.env.EMAIL_USER || 'lakaytax@gmail.com',
@@ -707,41 +726,43 @@ html: `
 
 <div style="background: #f8fafc; padding: 15px; border-radius: 8px; margin: 15px 0;">
 <h3 style="margin-top: 0;">Client Information:</h3>
+
 <p><strong>Name:</strong> ${clientName || 'Not provided'}</p>
+
 <p><strong>Email:</strong> ${
 clientEmail ? `<a href="mailto:${clientEmail}">${clientEmail}</a>` : 'Not provided'
 }</p>
+
 <p><strong>Phone:</strong> ${
 clientPhone
 ? `<a href="tel:${clientPhone.replace(/[^0-9+]/g, '')}">${clientPhone}</a>`
 : 'Not provided'
 }</p>
-// ✅ NEW admin fields (HTML snippet) – SAFE
-const adminAdminFieldsHtml = `
-<p><strong>Date of Birth:</strong> ${dateOfBirthClean || 'Not provided'}</p>
-<p><strong>Job Position:</strong> ${jobPositionClean || 'Not provided'}</p>
-<p><strong>Filing Status:</strong> ${filingStatusClean || 'Not provided'}</p>
-${married ? `<p><strong>Spouse Name:</strong> ${spouseNameClean || 'Not provided'}</p>` : ''}
+
+${adminAdminFieldsHtml}
+
 <p><strong>Return Type:</strong> ${returnType || 'Not specified'}</p>
 <p><strong>Dependents:</strong> ${dependents || '0'}</p>
 <p><strong>Address (client):</strong> ${currentAddress || clientAddress || 'Not provided'}</p>
+
 ${
 uploadUspsSuggestion && uploadUspsSuggestion.formatted
 ? `<p><strong>USPS suggested:</strong> ${uploadUspsSuggestion.formatted}</p>`
 : ''
 }
+
 <p><strong>Cash Advance:</strong> ${cashAdvance || 'Not specified'}</p>
 <p><strong>Refund Method:</strong> ${refundMethod || 'Not specified'}</p>
-<p><strong>Files Uploaded:</strong> ${req.files.length} files</p>
+<p><strong>Files Uploaded:</strong> ${(req.files || []).length} files</p>
 <p><strong>Reference #:</strong> ${referenceNumber}</p>
-${clientMessage ? `<p><strong>Client Message:</strong> ${clientMessage}</p>` : ''}`;
+${clientMessage ? `<p><strong>Client Message:</strong> ${clientMessage}</p>` : ''}
 </div>
 
 <div style="background: #dcfce7; padding: 10px; border-radius: 5px;">
 <p><strong>Files received:</strong></p>
 <ul>
 ${
-req.files
+(req.files || [])
 .map(
 file =>
 `<li>${file.originalname} (${(file.size / 1024 / 1024).toFixed(2)} MB)</li>`
@@ -756,6 +777,7 @@ Uploaded at: ${new Date().toLocaleString()}
 </p>
 
 <hr style="border:none;border-top:1px solid #e5e7eb;margin:16px 0;">
+
 <p style="font-size:13px;color:#475569;margin:0;">
 📧 <a href="mailto:lakaytax@gmail.com">lakaytax@gmail.com</a> &nbsp;|&nbsp;
 📞 <a href="tel:18639344823">(863) 934-4823</a> &nbsp;|&nbsp;
@@ -763,12 +785,30 @@ Uploaded at: ${new Date().toLocaleString()}
 </p>
 </div>
 `.trim(),
-attachments: req.files.map(file => ({
+attachments: (req.files || []).map(file => ({
 filename: file.originalname,
 content: file.buffer,
 contentType: file.mimetype
 }))
 };
+
+// ✅ send admin email
+try {
+await transporter.sendMail(adminEmail);
+console.log('✅ Admin email sent');
+} catch (e) {
+console.error('❌ Failed sending admin email:', e);
+}
+
+// (Keep your client receipt logic below exactly how you already have it)
+// ...
+return res.json({ ok: true, referenceNumber });
+
+} catch (err) {
+console.error('❌ Upload API failed:', err);
+return res.status(500).json({ ok: false, error: 'Server error' });
+}
+});
   
 /* ---------------- Email to CLIENT (templates) ---------------- */
 let clientEmailSent = false;
