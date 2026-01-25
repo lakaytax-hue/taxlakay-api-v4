@@ -569,11 +569,11 @@ clientLanguage,
 cashAdvance, // NEW
 refundMethod, // NEW
 
-// ✅ NEW (DOB + Job Position)
+// ✅ ADD (DOB + Job Position)
 dateOfBirth,
 jobPosition,
 
-// ✅ Filing Status / Spouse
+// ✅ NEW (Filing Status)
 filingStatus,
 spouseName
 } = req.body;
@@ -637,51 +637,46 @@ console.warn(`⚠️ No Drive folder created for ref ${referenceNumber}`);
 console.error('❌ Drive upload block failed:', e);
 }
 
-/* === Upload Log → Apps Script =================== */
+/* === Upload Log → Apps Script (WORKING + MATCHES SCRIPT) =================== */
 if (UPLOAD_SHEET_URL) {
 try {
+// 👇 Define the service text that will go to the "Service" column
 const serviceValue =
-returnType && String(returnType).trim()
-? `Tax Preparation — ${String(returnType).trim()}`
+returnType && returnType.trim()
+? `Tax Preparation — ${returnType.trim()}`
 : 'Tax Preparation — $150 Flat';
 
 const sheetPayload = {
-timestamp: new Date().toISOString(),
-referenceId: referenceNumber,
-clientName: clientName || "",
-clientEmail: clientEmail || "",
-clientPhone: clientPhone || "",
+timestamp: new Date().toISOString(), // Timestamp
+referenceId: referenceNumber, // Reference ID
+clientName: clientName || "", // Client Name
+clientEmail: clientEmail || "", // Client Email
+clientPhone: clientPhone || "", // Client Phone
 
-// ✅ NEW fields (MUST match Apps Script keys)
+// ✅ ADD (MUST match Apps Script keys)
 dateOfBirth: dateOfBirthClean,
 jobPosition: jobPositionClean,
 
-// (legacy/optional)
-clientFilingStatus: clientFilingStatus || "",
-clientSpouseName: clientSpouseName || "",
+clientFilingStatus: clientFilingStatus || "", // legacy/optional
+clientSpouseName: clientSpouseName || "", // legacy/optional
 
-service: serviceValue,
-returnType: returnType || "",
-dependents: dependents || "",
-cashAdvance: cashAdvance || "",
-refundMethod: refundMethod || "",
+service: serviceValue, // Service
+returnType: returnType || "", // Return Type
+dependents: dependents || "", // Dependents
+cashAdvance: cashAdvance || "", // CashAdvance
+refundMethod: refundMethod || "", // RefundMethod
 currentAddress: currentAddress || clientAddress || "",
 
-// ✅ Filing/Spouse
+// ✅ NEW columns
 filingStatus: filingStatusClean,
 spouseName: married ? spouseNameClean : "",
 
-filesCount: (req.files || []).length,
-fileNames: (req.files || []).map(f => f.originalname).join(", "),
-source: "Upload Form",
-language: lang,
-message: clientMessage || ""
+filesCount: (req.files || []).length, // Files count
+fileNames: (req.files || []).map(f => f.originalname).join(", "), // Files
+source: "Upload Form", // Source
+language: lang, // PreferedLanguage
+message: clientMessage || "" // Message
 };
-
-console.log('📤 Sheet payload (DOB/Job):', {
-dateOfBirth: sheetPayload.dateOfBirth,
-jobPosition: sheetPayload.jobPosition
-});
 
 const r = await fetch(UPLOAD_SHEET_URL, {
 method: "POST",
@@ -705,11 +700,13 @@ console.error("❌ Failed calling Upload Sheet logger:", e);
 console.warn("⚠️ UPLOAD_SHEET_URL not set; skipping sheet log.");
 }
 
-/* ============================ EMAILS ============================ */
 const transporter = createTransporter();
 
 /* ---------------- Email to YOU (admin) ---------------- */
-const adminTo = process.env.OWNER_EMAIL || 'lakaytax@gmail.com';
+const adminTo =
+process.env.OWNER_EMAIL ||
+process.env.EMAIL_USER ||
+'lakaytax@gmail.com';
 
 const adminEmail = {
 from: process.env.EMAIL_USER || 'lakaytax@gmail.com',
@@ -728,10 +725,11 @@ clientEmail ? `<a href="mailto:${clientEmail}">${clientEmail}</a>` : 'Not provid
 }</p>
 <p><strong>Phone:</strong> ${
 clientPhone
-? `<a href="tel:${String(clientPhone).replace(/[^0-9+]/g, '')}">${clientPhone}</a>`
+? `<a href="tel:${clientPhone.replace(/[^0-9+]/g, '')}">${clientPhone}</a>`
 : 'Not provided'
 }</p>
 
+<!-- ✅ ADD THESE (Admin email details) -->
 <p><strong>Filing Status:</strong> ${filingStatusClean || 'Not provided'}</p>
 <p><strong>Spouse Name:</strong> ${married ? (spouseNameClean || 'Not provided') : 'Not applicable'}</p>
 <p><strong>Date of Birth:</strong> ${dateOfBirthClean || 'Not provided'}</p>
@@ -747,7 +745,7 @@ uploadUspsSuggestion && uploadUspsSuggestion.formatted
 }
 <p><strong>Cash Advance:</strong> ${cashAdvance || 'Not specified'}</p>
 <p><strong>Refund Method:</strong> ${refundMethod || 'Not specified'}</p>
-<p><strong>Files Uploaded:</strong> ${(req.files || []).length} files</p>
+<p><strong>Files Uploaded:</strong> ${req.files.length} files</p>
 <p><strong>Reference #:</strong> ${referenceNumber}</p>
 ${clientMessage ? `<p><strong>Client Message:</strong> ${clientMessage}</p>` : ''}
 </div>
@@ -756,7 +754,7 @@ ${clientMessage ? `<p><strong>Client Message:</strong> ${clientMessage}</p>` : '
 <p><strong>Files received:</strong></p>
 <ul>
 ${
-(req.files || [])
+req.files
 .map(file => `<li>${file.originalname} (${(file.size / 1024 / 1024).toFixed(2)} MB)</li>`)
 .join('')
 }
@@ -775,26 +773,52 @@ Uploaded at: ${new Date().toLocaleString()}
 </p>
 </div>
 `.trim(),
-attachments: (req.files || []).map(file => ({
+attachments: req.files.map(file => ({
 filename: file.originalname,
 content: file.buffer,
 contentType: file.mimetype
 }))
 };
 
-// ✅ Send admin email (INSIDE async route — no deployment crash)
+// ✅ Send admin email (KEEP await INSIDE this route to avoid Render crash)
 try {
 await transporter.sendMail(adminEmail);
-console.log('✅ Admin email sent to:', adminTo);
+console.log('✅ Admin email sent:', adminTo);
 } catch (e) {
 console.error('❌ Admin email failed:', e);
 }
 
-// ✅ Your response
-return res.json({
-ok: true,
-referenceId: referenceNumber
-});
+// ✅ OPTIONAL: client receipt (simple + safe). If you already have your own client receipt below,
+// delete this part OR keep it (it won’t crash).
+if (sendClientReceipt && clientEmail) {
+const clientEmailOptions = {
+from: process.env.EMAIL_USER || 'lakaytax@gmail.com',
+to: clientEmail,
+subject: `✅ Upload Received - Reference ${referenceNumber}`,
+html: `
+<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+<h2 style="color:#1e63ff;">✅ We received your upload</h2>
+<p><strong>Reference #:</strong> ${referenceNumber}</p>
+<p><strong>Name:</strong> ${clientName || ''}</p>
+<p><strong>Filing Status:</strong> ${filingStatusClean || ''}</p>
+<p style="color:#64748b;font-size:12px;">Uploaded at: ${new Date().toLocaleString()}</p>
+<hr style="border:none;border-top:1px solid #e5e7eb;margin:16px 0;">
+<p style="font-size:13px;color:#475569;margin:0;">
+💻 <a href="https://www.taxlakay.com">www.taxlakay.com</a>
+</p>
+</div>
+`.trim()
+};
+
+try {
+await transporter.sendMail(clientEmailOptions);
+console.log('✅ Client receipt sent:', clientEmail);
+} catch (e) {
+console.error('❌ Client receipt failed:', e);
+}
+}
+
+return res.json({ ok: true, referenceId: referenceNumber });
 
 } catch (err) {
 console.error('❌ Upload API error:', err);
