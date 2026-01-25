@@ -569,6 +569,10 @@ clientLanguage,
 cashAdvance, // NEW
 refundMethod, // NEW
 
+// ✅ NEW (DOB + Job Position)
+dateOfBirth,
+jobPosition,
+
 // ✅ NEW (Filing Status)
 filingStatus,
 spouseName
@@ -592,6 +596,10 @@ ok: false,
 error: 'Spouse name is required when filing status is married.'
 });
 }
+
+// ✅ Clean DOB + Job
+const dateOfBirthClean = String(dateOfBirth || '').trim();
+const jobPositionClean = String(jobPosition || '').trim();
 
 const lang = ['en', 'es', 'ht'].includes((clientLanguage || '').toLowerCase())
 ? clientLanguage.toLowerCase()
@@ -644,8 +652,13 @@ referenceId: referenceNumber, // Reference ID
 clientName: clientName || "", // Client Name
 clientEmail: clientEmail || "", // Client Email
 clientPhone: clientPhone || "", // Client Phone
-clientFilingStatus: clientFilingStatus || "", // Client Filing Status
-clientSpouseName: clientSpouseName || "", // Client Spouse Name
+
+// ✅ NEW columns (MUST match Apps Script keys)
+dateOfBirth: dateOfBirthClean, // Date of Birth
+jobPosition: jobPositionClean, // Job Position
+
+clientFilingStatus: clientFilingStatus || "", // Client Filing Status (legacy/optional)
+clientSpouseName: clientSpouseName || "", // Client Spouse Name (legacy/optional)
 service: serviceValue, // Service
 returnType: returnType || "", // Return Type
 dependents: dependents || "", // Dependents
@@ -653,7 +666,7 @@ cashAdvance: cashAdvance || "", // CashAdvance
 refundMethod: refundMethod || "", // RefundMethod
 currentAddress: currentAddress || clientAddress || "",
 
-// ✅ NEW columns
+// ✅ Filing Status / Spouse
 filingStatus: filingStatusClean,
 spouseName: married ? spouseNameClean : "",
 
@@ -663,6 +676,12 @@ source: "Upload Form", // Source
 language: lang, // PreferedLanguage
 message: clientMessage || "" // Message
 };
+
+// ✅ Debug: confirm we're sending DOB + Job to Apps Script
+console.log('📤 Sheet payload (DOB/Job):', {
+dateOfBirth: sheetPayload.dateOfBirth,
+jobPosition: sheetPayload.jobPosition
+});
 
 const r = await fetch(UPLOAD_SHEET_URL, {
 method: "POST",
@@ -688,10 +707,9 @@ console.warn("⚠️ UPLOAD_SHEET_URL not set; skipping sheet log.");
 
 const transporter = createTransporter();
 
-  /* ---------------- Email to YOU (admin) ---------------- */
+/* ---------------- Email to YOU (admin) ---------------- */
 const adminTo =
 process.env.OWNER_EMAIL ||
-process.env.EMAIL_USER ||
 'lakaytax@gmail.com';
 
 const adminEmail = {
@@ -714,6 +732,17 @@ clientPhone
 ? `<a href="tel:${clientPhone.replace(/[^0-9+]/g, '')}">${clientPhone}</a>`
 : 'Not provided'
 }</p>
+
+<!-- ✅ NEW (Filing Status + DOB + Job Position) -->
+<p><strong>Filing Status:</strong> ${filingStatusClean || 'Not provided'}</p>
+${
+married
+? `<p><strong>Spouse Name:</strong> ${spouseNameClean || 'Not provided'}</p>`
+: `<p><strong>Spouse Name:</strong> Not applicable</p>`
+}
+<p><strong>Date of Birth:</strong> ${dateOfBirthClean || 'Not provided'}</p>
+<p><strong>Job Position:</strong> ${jobPositionClean || 'Not provided'}</p>
+
 <p><strong>Return Type:</strong> ${returnType || 'Not specified'}</p>
 <p><strong>Dependents:</strong> ${dependents || '0'}</p>
 <p><strong>Address (client):</strong> ${currentAddress || clientAddress || 'Not provided'}</p>
@@ -734,10 +763,7 @@ ${clientMessage ? `<p><strong>Client Message:</strong> ${clientMessage}</p>` : '
 <ul>
 ${
 req.files
-.map(
-file =>
-`<li>${file.originalname} (${(file.size / 1024 / 1024).toFixed(2)} MB)</li>`
-)
+.map(file => `<li>${file.originalname} (${(file.size / 1024 / 1024).toFixed(2)} MB)</li>`)
 .join('')
 }
 </ul>
@@ -761,6 +787,17 @@ content: file.buffer,
 contentType: file.mimetype
 }))
 };
+
+// ✅ Send admin email (keep your existing logic below this in your file)
+// await transporter.sendMail(adminEmail);
+
+// ... keep the rest of your route unchanged ...
+
+} catch (err) {
+console.error('❌ Upload API error:', err);
+return res.status(500).json({ ok: false, error: err.toString() });
+}
+});
   
 /* ---------------- Email to CLIENT (templates) ---------------- */
 let clientEmailSent = false;
