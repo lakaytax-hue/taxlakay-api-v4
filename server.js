@@ -782,8 +782,6 @@ console.error('❌ Failed calling Upload Sheet logger:', e);
 } else {
 console.warn('⚠️ UPLOAD_SHEET_URL not set; skipping sheet log.');
 }
-
-/* ---------------- Email setup ---------------- */
 const transporter = createTransporter();
 
 /* ---------------- Email to YOU (admin) ---------------- */
