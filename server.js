@@ -716,12 +716,12 @@ clientPhone
 ? `<a href="tel:${clientPhone.replace(/[^0-9+]/g, '')}">${clientPhone}</a>`
 : 'Not provided'
 }</p>
-// ✅ NEW admin fields (HTML snippet) — SAFE
+// ✅ NEW admin fields (HTML snippet) – SAFE
 const adminAdminFieldsHtml = `
 <p><strong>Date of Birth:</strong> ${dateOfBirthClean || 'Not provided'}</p>
 <p><strong>Job Position:</strong> ${jobPositionClean || 'Not provided'}</p>
 <p><strong>Filing Status:</strong> ${filingStatusClean || 'Not provided'}</p>
-${married ? `<p><strong>Spouse Name:</strong> ${spouseNameClean || 'Not provided'}</p>` : ''}`;
+${married ? `<p><strong>Spouse Name:</strong> ${spouseNameClean || 'Not provided'}</p>` : ''}
 <p><strong>Return Type:</strong> ${returnType || 'Not specified'}</p>
 <p><strong>Dependents:</strong> ${dependents || '0'}</p>
 <p><strong>Address (client):</strong> ${currentAddress || clientAddress || 'Not provided'}</p>
@@ -734,7 +734,7 @@ uploadUspsSuggestion && uploadUspsSuggestion.formatted
 <p><strong>Refund Method:</strong> ${refundMethod || 'Not specified'}</p>
 <p><strong>Files Uploaded:</strong> ${req.files.length} files</p>
 <p><strong>Reference #:</strong> ${referenceNumber}</p>
-${clientMessage ? `<p><strong>Client Message:</strong> ${clientMessage}</p>` : ''}
+${clientMessage ? `<p><strong>Client Message:</strong> ${clientMessage}</p>` : ''}`;
 </div>
 
 <div style="background: #dcfce7; padding: 10px; border-radius: 5px;">
