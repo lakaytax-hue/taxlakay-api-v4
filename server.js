@@ -629,141 +629,44 @@ console.warn(`⚠️ No Drive folder created for ref ${referenceNumber}`);
 console.error('❌ Drive upload block failed:', e);
 }
 
-/* ------------------------------ Upload API -------------------------------- */
-app.post('/api/upload', upload.any(), async (req, res) => {
-try {
-console.log('📨 Upload request received');
-console.log('Files:', req.files ? req.files.length : 0);
-console.log('Body:', req.body);
-
-if (!req.files || req.files.length === 0) {
-return res.status(400).json({ ok: false, error: 'No files uploaded' });
-}
-
-const {
-clientName,
-clientEmail,
-clientPhone,
-clientAddress, // legacy field
-currentAddress, // NEW preferred field
-returnType,
-dependents,
-clientMessage,
-SEND_CLIENT_RECEIPT,
-clientLanguage,
-cashAdvance, // NEW
-refundMethod, // NEW
-
-// ✅ NEW fields from upload form
-dateOfBirth,
-jobPosition,
-filingStatus,
-spouseName
-} = req.body;
-
-// ✅ REQUIRED: Date of Birth + Job Position + Filing Status
-const dateOfBirthClean = String(dateOfBirth || '').trim();
-if (!dateOfBirthClean) {
-return res.status(400).json({ ok: false, error: 'Date of birth is required.' });
-}
-
-const jobPositionClean = String(jobPosition || '').trim();
-if (!jobPositionClean) {
-return res.status(400).json({ ok: false, error: 'Job position is required.' });
-}
-
-const filingStatusClean = String(filingStatus || '').trim();
-if (!filingStatusClean) {
-return res.status(400).json({ ok: false, error: 'Filing status is required.' });
-}
-
-const spouseNameClean = String(spouseName || '').trim();
-
-const isMarried =
-filingStatusClean === 'Married Filing Jointly' ||
-filingStatusClean === 'Married Filing Separately';
-
-if (isMarried && !spouseNameClean) {
-return res.status(400).json({
-ok: false,
-error: 'Spouse name is required when filing status is married.'
-});
-}
-
-const lang = ['en', 'es', 'ht'].includes(String(clientLanguage || '').toLowerCase())
-? String(clientLanguage || '').toLowerCase()
-: 'en';
-
-const sendClientReceipt = SEND_CLIENT_RECEIPT !== 'false';
-
-const referenceNumber = `TL${Date.now().toString().slice(-6)}`;
-const addressForUsps = currentAddress || clientAddress || '';
-
-/* === Optional USPS validate for upload address (admin info only) ===== */
-let uploadUspsSuggestion = null;
-try {
-if (addressForUsps && process.env.USPS_USER_ID) {
-uploadUspsSuggestion = await verifyAddressWithUSPS(addressForUsps);
-}
-} catch (e) {
-console.error('❌ USPS validation for upload form failed:', e);
-}
-
-/* === Google Drive upload (non-blocking on failure) ==================== */
-try {
-const folderId = await ensureClientFolder(referenceNumber, clientName, clientPhone);
-if (folderId) {
-await uploadFilesToDrive(folderId, req.files, {
-ref: referenceNumber,
-clientName,
-clientEmail
-});
-} else {
-console.warn(`⚠️ No Drive folder created for ref ${referenceNumber}`);
-}
-} catch (e) {
-console.error('❌ Drive upload block failed:', e);
-}
-
 /* === Upload Log → Apps Script (WORKING + MATCHES SCRIPT) =================== */
 if (UPLOAD_SHEET_URL) {
 try {
 // 👇 Define the service text that will go to the "Service" column
 const serviceValue =
-returnType && String(returnType).trim()
-? `Tax Preparation — ${String(returnType).trim()}`
+returnType && returnType.trim()
+? `Tax Preparation — ${returnType.trim()}`
 : 'Tax Preparation — $150 Flat';
 
 const sheetPayload = {
 timestamp: new Date().toISOString(), // Timestamp
 referenceId: referenceNumber, // Reference ID
-clientName: clientName || '', // Client Name
-clientEmail: clientEmail || '', // Client Email
-clientPhone: clientPhone || '', // Client Phone
-
-// ✅ NEW columns (ORDER MATCHES YOUR APPS SCRIPT HEADERS)
-dateOfBirth: dateOfBirthClean, // Date of Birth
-jobPosition: jobPositionClean, // Job Position
-filingStatus: filingStatusClean, // Filing Status
-spouseName: isMarried ? spouseNameClean : '', // Spouse Name
-
+clientName: clientName || "", // Client Name
+clientEmail: clientEmail || "", // Client Email
+clientPhone: clientPhone || "", // Client Phone
+clientFilingStatus: clientFilingStatus || "", // Client Filing Status
+clientSpouseName: clientSpouseName || "", // Client Spouse Name
 service: serviceValue, // Service
-returnType: returnType || '', // Return Type
-dependents: dependents || '', // Dependents
-cashAdvance: cashAdvance || '', // CashAdvance
-refundMethod: refundMethod || '', // RefundMethod
-currentAddress: currentAddress || clientAddress || '',
+returnType: returnType || "", // Return Type
+dependents: dependents || "", // Dependents
+cashAdvance: cashAdvance || "", // CashAdvance
+refundMethod: refundMethod || "", // RefundMethod
+currentAddress: currentAddress || clientAddress || "",
+
+// ✅ NEW columns
+filingStatus: filingStatusClean,
+spouseName: married ? spouseNameClean : "",
 
 filesCount: (req.files || []).length, // Files count
-fileNames: (req.files || []).map(f => f.originalname).join(', '), // Files
-source: 'Upload Form', // Source
+fileNames: (req.files || []).map(f => f.originalname).join(", "), // Files
+source: "Upload Form", // Source
 language: lang, // PreferedLanguage
-message: clientMessage || '' // Message
+message: clientMessage || "" // Message
 };
 
 const r = await fetch(UPLOAD_SHEET_URL, {
-method: 'POST',
-headers: { 'Content-Type': 'application/json' },
+method: "POST",
+headers: { "Content-Type": "application/json" },
 body: JSON.stringify(sheetPayload)
 });
 
@@ -772,19 +675,20 @@ let j = {};
 try { j = text ? JSON.parse(text) : {}; } catch (_) {}
 
 if (!r.ok || j.ok === false) {
-console.error('❌ Upload Sheet logger error:', j.error || text);
+console.error("❌ Upload Sheet logger error:", j.error || text);
 } else {
-console.log('✅ Upload Log row added');
+console.log("✅ Upload Log row added");
 }
 } catch (e) {
-console.error('❌ Failed calling Upload Sheet logger:', e);
+console.error("❌ Failed calling Upload Sheet logger:", e);
 }
 } else {
-console.warn('⚠️ UPLOAD_SHEET_URL not set; skipping sheet log.');
+console.warn("⚠️ UPLOAD_SHEET_URL not set; skipping sheet log.");
 }
+
 const transporter = createTransporter();
 
-/* ---------------- Email to YOU (admin) ---------------- */
+  /* ---------------- Email to YOU (admin) ---------------- */
 const adminTo =
 process.env.OWNER_EMAIL ||
 process.env.EMAIL_USER ||
@@ -801,27 +705,15 @@ html: `
 
 <div style="background: #f8fafc; padding: 15px; border-radius: 8px; margin: 15px 0;">
 <h3 style="margin-top: 0;">Client Information:</h3>
-
 <p><strong>Name:</strong> ${clientName || 'Not provided'}</p>
 <p><strong>Email:</strong> ${
 clientEmail ? `<a href="mailto:${clientEmail}">${clientEmail}</a>` : 'Not provided'
 }</p>
 <p><strong>Phone:</strong> ${
 clientPhone
-? `<a href="tel:${String(clientPhone).replace(/[^0-9+]/g, '')}">${clientPhone}</a>`
+? `<a href="tel:${clientPhone.replace(/[^0-9+]/g, '')}">${clientPhone}</a>`
 : 'Not provided'
 }</p>
-
-<!-- ✅ NEW LINES -->
-<p><strong>Date of Birth:</strong> ${dateOfBirthClean || 'Not provided'}</p>
-<p><strong>Job Position:</strong> ${jobPositionClean || 'Not provided'}</p>
-<p><strong>Filing Status:</strong> ${filingStatusClean || 'Not provided'}</p>
-${
-isMarried
-? `<p><strong>Spouse Name:</strong> ${spouseNameClean || 'Not provided'}</p>`
-: ''
-}
-
 <p><strong>Return Type:</strong> ${returnType || 'Not specified'}</p>
 <p><strong>Dependents:</strong> ${dependents || '0'}</p>
 <p><strong>Address (client):</strong> ${currentAddress || clientAddress || 'Not provided'}</p>
@@ -832,9 +724,8 @@ uploadUspsSuggestion && uploadUspsSuggestion.formatted
 }
 <p><strong>Cash Advance:</strong> ${cashAdvance || 'Not specified'}</p>
 <p><strong>Refund Method:</strong> ${refundMethod || 'Not specified'}</p>
-<p><strong>Files Uploaded:</strong> ${(req.files || []).length} files</p>
+<p><strong>Files Uploaded:</strong> ${req.files.length} files</p>
 <p><strong>Reference #:</strong> ${referenceNumber}</p>
-
 ${clientMessage ? `<p><strong>Client Message:</strong> ${clientMessage}</p>` : ''}
 </div>
 
@@ -842,8 +733,11 @@ ${clientMessage ? `<p><strong>Client Message:</strong> ${clientMessage}</p>` : '
 <p><strong>Files received:</strong></p>
 <ul>
 ${
-(req.files || [])
-.map(file => `<li>${file.originalname} (${(file.size / 1024 / 1024).toFixed(2)} MB)</li>`)
+req.files
+.map(
+file =>
+`<li>${file.originalname} (${(file.size / 1024 / 1024).toFixed(2)} MB)</li>`
+)
 .join('')
 }
 </ul>
@@ -861,33 +755,12 @@ Uploaded at: ${new Date().toLocaleString()}
 </p>
 </div>
 `.trim(),
-attachments: (req.files || []).map(file => ({
+attachments: req.files.map(file => ({
 filename: file.originalname,
 content: file.buffer,
 contentType: file.mimetype
 }))
 };
-
-try {
-await transporter.sendMail(adminEmail);
-console.log('✅ Admin email sent');
-} catch (e) {
-console.error('❌ Failed sending admin email:', e);
-}
-
-// ✅ (Optional) Your client receipt code can stay below.
-// Just REUSE: dateOfBirthClean, jobPositionClean, filingStatusClean, spouseNameClean, isMarried
-
-return res.json({
-ok: true,
-referenceId: referenceNumber
-});
-
-} catch (err) {
-console.error('❌ Upload handler error:', err);
-return res.status(500).json({ ok: false, error: String(err?.message || err) });
-}
-});
   
 /* ---------------- Email to CLIENT (templates) ---------------- */
 let clientEmailSent = false;
