@@ -569,7 +569,7 @@ clientLanguage,
 cashAdvance, // NEW
 refundMethod, // NEW
 
-// ✅ NEW (added)
+// ✅ NEW: DOB + Job Position
 dateOfBirth,
 jobPosition,
 
@@ -661,7 +661,7 @@ cashAdvance: cashAdvance || "", // CashAdvance
 refundMethod: refundMethod || "", // RefundMethod
 currentAddress: currentAddress || clientAddress || "",
 
-// ✅ NEW columns (ORDER: DOB, Job, Filing Status)
+// ✅ NEW columns (DOB + Job BEFORE Filing Status)
 dateOfBirth: dateOfBirthClean,
 jobPosition: jobPositionClean,
 filingStatus: filingStatusClean,
@@ -725,7 +725,7 @@ clientPhone
 : 'Not provided'
 }</p>
 
-<!-- ✅ NEW admin fields -->
+<!-- ✅ NEW: Admin must receive these like other columns -->
 <p><strong>Date of Birth:</strong> ${dateOfBirthClean || 'Not provided'}</p>
 <p><strong>Job Position:</strong> ${jobPositionClean || 'Not provided'}</p>
 <p><strong>Filing Status:</strong> ${filingStatusClean || 'Not provided'}</p>
@@ -737,59 +737,8 @@ ${married ? `<p><strong>Spouse Name:</strong> ${spouseNameClean || 'Not provided
 ${
 uploadUspsSuggestion && uploadUspsSuggestion.formatted
 ? `<p><strong>USPS suggested:</strong> ${uploadUspsSuggestion.formatted}</p>`
-: ''
-}
-<p><strong>Cash Advance:</strong> ${cashAdvance || 'Not specified'}</p>
-<p><strong>Refund Method:</strong> ${refundMethod || 'Not specified'}</p>
-<p><strong>Files Uploaded:</strong> ${req.files.length} files</p>
-<p><strong>Reference #:</strong> ${referenceNumber}</p>
-${clientMessage ? `<p><strong>Client Message:</strong> ${clientMessage}</p>` : ''}
-</div>
+:
 
-<div style="background: #dcfce7; padding: 10px; border-radius: 5px;">
-<p><strong>Files received:</strong></p>
-<ul>
-${
-req.files
-.map(
-file =>
-`<li>${file.originalname} (${(file.size / 1024 / 1024).toFixed(2)} MB)</li>`
-)
-.join('')
-}
-</ul>
-</div>
-
-<p style="color: #64748b; font-size: 12px; margin-top: 20px;">
-Uploaded at: ${new Date().toLocaleString()}
-</p>
-
-<hr style="border:none;border-top:1px solid #e5e7eb;margin:16px 0;">
-<p style="font-size:13px;color:#475569;margin:0;">
-📧 <a href="mailto:lakaytax@gmail.com">lakaytax@gmail.com</a> &nbsp;|&nbsp;
-📞 <a href="tel:18639344823">(863) 934-4823</a> &nbsp;|&nbsp;
-💻 <a href="https://www.taxlakay.com">www.taxlakay.com</a>
-</p>
-</div>
-`.trim(),
-attachments: req.files.map(file => ({
-filename: file.originalname,
-content: file.buffer,
-contentType: file.mimetype
-}))
-};
-
-// ✅ IMPORTANT: you said don't touch transporter logic — leaving as-is
-// (Your existing sendMail / client receipt code continues below...)
-// e.g. await transporter.sendMail(adminEmail);
-
-// ... keep the rest of your original code here ...
-
-} catch (err) {
-console.error('❌ Upload API error:', err);
-return res.status(500).json({ ok: false, error: 'Server error.' });
-}
-});
   
 /* ---------------- Email to CLIENT (templates) ---------------- */
 let clientEmailSent = false;
