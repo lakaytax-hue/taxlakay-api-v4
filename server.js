@@ -586,6 +586,12 @@ if (!filingStatusClean) {
 return res.status(400).json({ ok: false, error: 'Filing status is required.' });
 }
 
+// ✅ Date of Birth clean
+const dateOfBirthClean = String(dateOfBirth || '').trim();
+
+// ✅ Job Position clean
+const jobPositionClean = String(jobPosition || '').trim();  
+  
 // ✅ Spouse required only if married
 const married =
 filingStatusClean === 'Married Filing Jointly' ||
@@ -729,12 +735,6 @@ clientPhone
 <p><strong>Job Position:</strong> ${jobPositionClean || 'Not provided'}</p>
 <p><strong>Filing Status:</strong> ${filingStatusClean || 'Not provided'}</p>
 ${married ? `<p><strong>Spouse Name:</strong> ${spouseNameClean || 'Not provided'}</p>` : ''}
-
-// ✅ Date of Birth clean
-const dateOfBirthClean = String(dateOfBirth || '').trim();
-
-// ✅ Job Position clean
-const jobPositionClean = String(jobPosition || '').trim();
 
 <p><strong>Return Type:</strong> ${returnType || 'Not specified'}</p>
 <p><strong>Dependents:</strong> ${dependents || '0'}</p>
