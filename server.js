@@ -658,7 +658,7 @@ clientEmail: clientEmail || "", // Client Email
 clientPhone: clientPhone || "", // Client Phone
 
 // ✅ NEW (DOB + Job Position) — added
-clientDateofBirth: dateOfBirthClean || "",
+clientDateOfBirth: dateOfBirthClean || "",
 clientJobPosition: jobPositionClean || "",
 
 clientFilingStatus: clientFilingStatus || "", // Client Filing Status
