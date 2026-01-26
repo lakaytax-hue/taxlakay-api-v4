@@ -557,6 +557,8 @@ const {
 clientName,
 clientEmail,
 clientPhone,
+clientdateOfBirth,
+clientjobPosition,
 clientFilingStatus,
 clientSpouseName,
 clientAddress, // legacy field
@@ -571,16 +573,12 @@ refundMethod, // NEW
 
 // ✅ NEW (Filing Status)
 filingStatus,
-spouseName,
+spouseName
 
 // ✅ NEW (DOB + Job Position)
 dateOfBirth,
 jobPosition
 } = req.body;
-
-// ✅ Clean DOB + Job Position (safe for email + sheet)
-const dateOfBirthClean = String(dateOfBirth || '').trim();
-const jobPositionClean = String(jobPosition || '').trim();
 
 // ✅ Filing Status required
 const filingStatusClean = String(filingStatus || '').trim();
@@ -665,7 +663,6 @@ dependents: dependents || "", // Dependents
 cashAdvance: cashAdvance || "", // CashAdvance
 refundMethod: refundMethod || "", // RefundMethod
 currentAddress: currentAddress || clientAddress || "",
-
 // ✅ NEW columns
 filingStatus: filingStatusClean,
 spouseName: married ? spouseNameClean : "",
@@ -701,7 +698,7 @@ console.warn("⚠️ UPLOAD_SHEET_URL not set; skipping sheet log.");
 
 const transporter = createTransporter();
 
-/* ---------------- Email to YOU (admin) ---------------- */
+  /* ---------------- Email to YOU (admin) ---------------- */
 const adminTo =
 process.env.OWNER_EMAIL ||
 process.env.EMAIL_USER ||
@@ -727,7 +724,6 @@ clientPhone
 ? `<a href="tel:${clientPhone.replace(/[^0-9+]/g, '')}">${clientPhone}</a>`
 : 'Not provided'
 }</p>
-
 <!-- ✅ NEW fields in admin email -->
 <p><strong>Date of Birth:</strong> ${dateOfBirthClean || 'Not provided'}</p>
 <p><strong>Job Position:</strong> ${jobPositionClean || 'Not provided'}</p>
@@ -781,22 +777,7 @@ content: file.buffer,
 contentType: file.mimetype
 }))
 };
-
-// ✅ Send admin email (keep SAME logic style: no await needed if you prefer)
-transporter
-.sendMail(adminEmail)
-.then(() => console.log('✅ Admin email sent to', adminTo))
-.catch(e => console.error('❌ Failed sending admin email:', e));
-
-/* ✅ Continue with your existing client receipt logic below exactly as you already have it... */
-/* (Do not change your working client email section) */
-
-} catch (err) {
-console.error('❌ Upload API failed:', err);
-return res.status(500).json({ ok: false, error: 'Server error' });
-}
-});
-
+  
 /* ---------------- Email to CLIENT (templates) ---------------- */
 let clientEmailSent = false;
 if (clientEmail) {
