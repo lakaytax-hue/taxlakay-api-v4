@@ -573,11 +573,11 @@ refundMethod, // NEW
 
 // ✅ NEW (Filing Status)
 filingStatus,
-spouseName
+spouseName,
 
 // ✅ NEW (DOB + Job Position)
 dateOfBirth,
-jobPosition
+jobPosition,
 } = req.body;
 
 // ✅ Filing Status required
