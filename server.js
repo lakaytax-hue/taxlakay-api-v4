@@ -730,6 +730,12 @@ clientPhone
 <p><strong>Filing Status:</strong> ${filingStatusClean || 'Not provided'}</p>
 ${married ? `<p><strong>Spouse Name:</strong> ${spouseNameClean || 'Not provided'}</p>` : ''}
 
+// ✅ Date of Birth clean
+const dateOfBirthClean = String(dateOfBirth || '').trim();
+
+// ✅ Job Position clean
+const jobPositionClean = String(jobPosition || '').trim();
+
 <p><strong>Return Type:</strong> ${returnType || 'Not specified'}</p>
 <p><strong>Dependents:</strong> ${dependents || '0'}</p>
 <p><strong>Address (client):</strong> ${currentAddress || clientAddress || 'Not provided'}</p>
