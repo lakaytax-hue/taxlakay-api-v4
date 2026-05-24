@@ -750,6 +750,8 @@ uploadUspsSuggestion && uploadUspsSuggestion.formatted
 }
 <p><strong>Cash Advance:</strong> ${cashAdvance || 'Not specified'}</p>
 <p><strong>Refund Method:</strong> ${refundMethod || 'Not specified'}</p>
+<p><strong>Payment Option:</strong> ${paymentOption || 'Not selected'}</p>
+<p><strong>Deduct From Refund Authorization:</strong> ${deductAuthorization || 'Not accepted'}</p>
 <p><strong>Files Uploaded:</strong> ${req.files.length} files</p>
 <p><strong>Reference #:</strong> ${referenceNumber}</p>
 ${clientMessage ? `<p><strong>Client Message:</strong> ${clientMessage}</p>` : ''}
