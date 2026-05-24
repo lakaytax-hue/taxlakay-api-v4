@@ -578,6 +578,8 @@ spouseName,
 // ✅ NEW (DOB + Job Position)
 dateOfBirth,
 jobPosition,
+paymentOption,
+deductAuthorization,
 } = req.body;
 
 // ✅ Filing Status required
@@ -672,6 +674,8 @@ currentAddress: currentAddress || clientAddress || "",
 // ✅ NEW columns
 filingStatus: filingStatusClean,
 spouseName: married ? spouseNameClean : "",
+paymentOption: paymentOption || "",
+deductAuthorization: deductAuthorization || "",
 
 filesCount: (req.files || []).length, // Files count
 fileNames: (req.files || []).map(f => f.originalname).join(", "), // Files
